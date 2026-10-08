@@ -62,6 +62,65 @@ export type MessageContent =
       components?: Array<Record<string, unknown>>;
     };
 
+export type WorkflowAction =
+  | { type: "message"; nodeId: string; content: MessageContent; delaySeconds: number }
+  | { type: "assign"; nodeId: string; userId?: string };
+
+function nextWorkflowEdge(graph: WorkflowGraph, source: string, branch?: string): WorkflowEdge | undefined {
+  const outgoing = graph.edges.filter((edge) => edge.source === source);
+  if (branch) return outgoing.find((edge) => edge.branch === branch) ?? outgoing.find((edge) => !edge.branch);
+  return outgoing.find((edge) => !edge.branch) ?? outgoing[0];
+}
+
+function workflowConditionMatches(config: Record<string, unknown> | undefined, triggerText: string): boolean {
+  const operator = config?.operator;
+  const expected = typeof config?.value === "string" ? config.value : "";
+  const actual = triggerText.trim().toLowerCase();
+  const target = expected.trim().toLowerCase();
+  if (operator === "equals") return actual === target;
+  if (operator === "starts_with") return actual.startsWith(target);
+  if (operator === "ends_with") return actual.endsWith(target);
+  return actual.includes(target);
+}
+
+export function planWorkflowExecution(graph: WorkflowGraph, triggerText = ""): WorkflowAction[] {
+  const validation = validateWorkflowGraph(graph);
+  if (!validation.valid) throw new Error(validation.errors.join("; "));
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  let node = graph.nodes.find((candidate) => candidate.type === "trigger");
+  let delaySeconds = 0;
+  const actions: WorkflowAction[] = [];
+  const visited = new Set<string>();
+
+  for (let step = 0; node && step < graph.nodes.length + 1; step += 1) {
+    if (visited.has(node.id)) throw new Error(`Workflow cycle detected at node: ${node.id}`);
+    visited.add(node.id);
+    let branch: string | undefined;
+
+    if (node.type === "condition") branch = workflowConditionMatches(node.config, triggerText) ? "true" : "false";
+    if (node.type === "delay") {
+      const seconds = Number(node.config?.seconds ?? 0);
+      if (!Number.isFinite(seconds) || seconds < 1 || seconds > 30 * 24 * 60 * 60) throw new Error(`Invalid delay at node: ${node.id}`);
+      delaySeconds += Math.floor(seconds);
+    }
+    if (node.type === "message") {
+      const content = node.config?.content as MessageContent | undefined;
+      if (!content || (content.type !== "text" && content.type !== "template")) throw new Error(`Invalid message at node: ${node.id}`);
+      actions.push({ type: "message", nodeId: node.id, content, delaySeconds });
+    }
+    if (node.type === "assign") {
+      const userId = typeof node.config?.userId === "string" ? node.config.userId : undefined;
+      actions.push({ type: "assign", nodeId: node.id, ...(userId ? { userId } : {}) });
+    }
+    if (node.type === "agent") throw new Error(`AI agent execution is not configured for node: ${node.id}`);
+    if (node.type === "end") break;
+
+    const edge = nextWorkflowEdge(graph, node.id, branch);
+    node = edge ? byId.get(edge.target) : undefined;
+  }
+  return actions;
+}
+
 export interface OutboundMessageCommand {
   tenantId: TenantId;
   channelId: string;

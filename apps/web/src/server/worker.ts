@@ -1,6 +1,6 @@
 import "server-only";
 import { decryptCredential, MetaCloudApiClient } from "@passion-fruit/adapters";
-import type { MessageContent, MessageStatus } from "@passion-fruit/domain";
+import { planWorkflowExecution, type MessageContent, type MessageStatus, type WorkflowGraph } from "@passion-fruit/domain";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "./supabase";
 import { workerEnvironment } from "./env";
@@ -87,7 +87,7 @@ async function processInbound(admin: SupabaseClient, job: ClaimedJob): Promise<J
           .single();
         if (conversationError || !conversation) return { success: false, error: conversationError?.message ?? "conversation_upsert_failed" };
         const occurredAt = providerMessage.timestamp ? new Date(Number(providerMessage.timestamp) * 1000).toISOString() : new Date().toISOString();
-        const { error: messageError } = await admin.from("messages").upsert({
+        const { data: savedMessage, error: messageError } = await admin.from("messages").upsert({
           tenant_id: receipt.tenant_id,
           conversation_id: conversation.id,
           channel_id: channel.id,
@@ -98,8 +98,13 @@ async function processInbound(admin: SupabaseClient, job: ClaimedJob): Promise<J
           provider_message_id: providerMessageId,
           content: inboundContent(providerMessage),
           created_at: occurredAt,
-        }, { onConflict: "tenant_id,provider_message_id", ignoreDuplicates: true });
+        }, { onConflict: "tenant_id,provider_message_id", ignoreDuplicates: true }).select("id").maybeSingle();
         if (messageError) return { success: false, error: messageError.message };
+        const inboundMessageId = savedMessage?.id ?? (await admin.from("messages").select("id").eq("tenant_id", receipt.tenant_id).eq("provider_message_id", providerMessageId).maybeSingle()).data?.id;
+        if (inboundMessageId) {
+          const { error: workflowError } = await admin.rpc("enqueue_inbound_workflows", { p_message_id: inboundMessageId });
+          if (workflowError) return { success: false, error: workflowError.message };
+        }
       }
     }
   }
@@ -158,6 +163,86 @@ async function processOutbound(admin: SupabaseClient, job: ClaimedJob): Promise<
   return { success: !result.retryable, error: result.message, retryDelaySeconds: result.retryAfterMs ? Math.ceil(result.retryAfterMs / 1000) : Math.min(900, 2 ** job.attempts) };
 }
 
+async function processWorkflow(admin: SupabaseClient, job: ClaimedJob): Promise<JobResult> {
+  const runId = String(job.payload.run_id ?? "");
+  const { data: run, error: runError } = await admin.from("workflow_runs").select("id,tenant_id,workflow_id,workflow_version,conversation_id,trigger_message_id,status").eq("id", runId).single();
+  if (runError || !run) return { success: false, error: runError?.message ?? "workflow_run_not_found" };
+  if (["completed", "cancelled"].includes(run.status)) return { success: true };
+
+  try {
+    const [{ data: version }, { data: conversation }, { data: triggerMessage }] = await Promise.all([
+      admin.from("workflow_versions").select("graph").eq("workflow_id", run.workflow_id).eq("version", run.workflow_version).eq("tenant_id", run.tenant_id).single(),
+      admin.from("conversations").select("id,channel_id,contact_id,ownership_generation").eq("id", run.conversation_id).eq("tenant_id", run.tenant_id).single(),
+      admin.from("messages").select("content").eq("id", run.trigger_message_id).eq("tenant_id", run.tenant_id).single(),
+    ]);
+    if (!version || !conversation) throw new Error("workflow_context_unavailable");
+    const triggerText = triggerMessage?.content?.type === "text" && typeof triggerMessage.content.text === "string" ? triggerMessage.content.text : "";
+    const actions = planWorkflowExecution(version.graph as WorkflowGraph, triggerText);
+    let ownershipGeneration = conversation.ownership_generation;
+
+    for (const action of actions) {
+      await admin.from("workflow_runs").update({ current_node_id: action.nodeId }).eq("id", run.id).eq("tenant_id", run.tenant_id);
+      if (action.type === "assign") {
+        ownershipGeneration += 1;
+        const { error } = await admin.from("conversations").update({ ownership: "human", assigned_user_id: action.userId ?? null, ownership_generation: ownershipGeneration, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", run.tenant_id);
+        if (error) throw error;
+        continue;
+      }
+
+      const idempotencyKey = `workflow:${run.id}:${action.nodeId}`;
+      if (action.delaySeconds > 0) {
+        const dueAt = new Date(Date.now() + action.delaySeconds * 1000);
+        const { error } = await admin.from("scheduled_messages").upsert({
+          tenant_id: run.tenant_id,
+          channel_id: conversation.channel_id,
+          contact_id: conversation.contact_id,
+          conversation_id: conversation.id,
+          content: action.content,
+          origin: "workflow",
+          due_at: dueAt.toISOString(),
+          expires_at: new Date(dueAt.getTime() + 24 * 60 * 60_000).toISOString(),
+          status: "scheduled",
+          idempotency_key: idempotencyKey,
+        }, { onConflict: "tenant_id,idempotency_key", ignoreDuplicates: true });
+        if (error) throw error;
+        continue;
+      }
+
+      let messageId = (await admin.from("messages").select("id").eq("tenant_id", run.tenant_id).eq("idempotency_key", idempotencyKey).maybeSingle()).data?.id;
+      if (!messageId) {
+        const { data: message, error } = await admin.from("messages").insert({
+          tenant_id: run.tenant_id,
+          conversation_id: conversation.id,
+          channel_id: conversation.channel_id,
+          contact_id: conversation.contact_id,
+          direction: "outbound",
+          origin: "workflow",
+          status: "queued",
+          idempotency_key: idempotencyKey,
+          content: action.content,
+          expires_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+        }).select("id").single();
+        if (error || !message) throw error ?? new Error("workflow_message_create_failed");
+        messageId = message.id;
+      }
+      const existingJob = await admin.from("jobs").select("id").eq("kind", "outbound").eq("payload->>message_id", messageId).neq("status", "dead").limit(1).maybeSingle();
+      if (!existingJob.data) {
+        const { data: outboundJob, error } = await admin.from("jobs").insert({ tenant_id: run.tenant_id, kind: "outbound", payload: { message_id: messageId } }).select("id").single();
+        if (error || !outboundJob) throw error ?? new Error("workflow_job_create_failed");
+        const { error: outboxError } = await admin.from("outbox").insert({ tenant_id: run.tenant_id, topic: "job.outbound", payload: { job_id: outboundJob.id, kind: "outbound" } });
+        if (outboxError) throw outboxError;
+      }
+    }
+
+    await admin.from("workflow_runs").update({ status: "completed", state: { action_count: actions.length }, finished_at: new Date().toISOString() }).eq("id", run.id).eq("tenant_id", run.tenant_id);
+    return { success: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "workflow_execution_failed";
+    await admin.from("workflow_runs").update({ status: "failed", state: { error: detail }, finished_at: new Date().toISOString() }).eq("id", run.id).eq("tenant_id", run.tenant_id);
+    return { success: false, error: detail };
+  }
+}
+
 async function processCampaign(admin: SupabaseClient, job: ClaimedJob): Promise<JobResult> {
   const campaignId = String(job.payload.campaign_id ?? "");
   if (!campaignId) return { success: false, error: "campaign_id_missing" };
@@ -173,6 +258,8 @@ export async function runWorkerBatch(): Promise<{ claimed: number; completed: nu
     : env.batchSize;
   const { error: scheduleError } = await admin.rpc("dispatch_due_schedules", { p_limit: claimLimit * 2 });
   if (scheduleError) throw scheduleError;
+  const { error: campaignScheduleError } = await admin.rpc("dispatch_due_campaigns", { p_limit: claimLimit });
+  if (campaignScheduleError) throw campaignScheduleError;
   const { data, error } = await admin.rpc("claim_jobs", { p_limit: claimLimit, p_visibility_seconds: Math.max(90, env.timeBudgetSeconds * 3) });
   if (error) throw error;
   const jobs = (data ?? []) as ClaimedJob[];
@@ -185,6 +272,8 @@ export async function runWorkerBatch(): Promise<{ claimed: number; completed: nu
         ? await processInbound(admin, job)
         : job.kind === "outbound"
           ? await processOutbound(admin, job)
+          : job.kind === "workflow"
+            ? await processWorkflow(admin, job)
           : job.kind === "campaign"
             ? await processCampaign(admin, job)
             : { success: false, error: `unsupported_job_kind:${job.kind}`, retryDelaySeconds: 300 };

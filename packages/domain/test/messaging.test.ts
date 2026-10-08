@@ -4,6 +4,7 @@ import {
   calculateRetryDelayMs,
   canTransitionMessage,
   normaliseIdempotencyKey,
+  planWorkflowExecution,
   validateWorkflowGraph,
 } from "../src/index";
 
@@ -27,6 +28,25 @@ describe("workflow graph validation", () => {
     const result = validateWorkflowGraph({ nodes: [{ id: "same", type: "trigger" }, { id: "same", type: "message" }], edges: [{ source: "missing", target: "same" }] });
     expect(result.valid).toBe(false);
     expect(result.errors).toEqual(expect.arrayContaining(["Duplicate node id: same", "Edge source does not exist: missing"]));
+  });
+
+  it("plans conditional workflow messages with durable delays", () => {
+    const actions = planWorkflowExecution({
+      nodes: [
+        { id: "trigger", type: "trigger" },
+        { id: "condition", type: "condition", config: { operator: "contains", value: "price" } },
+        { id: "wait", type: "delay", config: { seconds: 60 } },
+        { id: "reply", type: "message", config: { content: { type: "text", text: "Here is our pricing." } } },
+        { id: "fallback", type: "assign" },
+      ],
+      edges: [
+        { source: "trigger", target: "condition" },
+        { source: "condition", target: "wait", branch: "true" },
+        { source: "condition", target: "fallback", branch: "false" },
+        { source: "wait", target: "reply" },
+      ],
+    }, "Can I see the PRICE?");
+    expect(actions).toEqual([{ type: "message", nodeId: "reply", content: { type: "text", text: "Here is our pricing." }, delaySeconds: 60 }]);
   });
 });
 
