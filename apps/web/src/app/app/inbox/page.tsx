@@ -1,13 +1,47 @@
 "use client";
-import { useState } from "react";
-import { ProductShell } from "@/components/product-shell";
-import { Bot, Check, Filter, MessageCircleMore, Search, SendHorizontal, Sparkles, UserRoundPlus } from "@/components/icons";
 
-const chats=[
-  {id:1,name:"Meera Nair",initials:"MN",preview:"I need help changing my delivery…",time:"2m",tag:"Needs human",unread:2},
-  {id:2,name:"Aarav Raj",initials:"AR",preview:"Thank you! That answers it.",time:"6m",tag:"AI handled",unread:0},
-  {id:3,name:"Sara Khan",initials:"SK",preview:"Can you share the price list?",time:"12m",tag:"New lead",unread:1},
-  {id:4,name:"Dev Varma",initials:"DV",preview:"My order number is PF-2318",time:"18m",tag:"Order",unread:0},
-  {id:5,name:"Nila Joseph",initials:"NJ",preview:"Tomorrow morning works for me.",time:"31m",tag:"Appointment",unread:0},
-];
-export default function InboxPage(){const [active,setActive]=useState(chats[0]);const [reply,setReply]=useState("");const [messages,setMessages]=useState(["Hi, I need help changing my delivery address.","Of course. I can help with that. Could you share your order number?","It is PF-2048."]); return <ProductShell title="Inbox"><div className="inbox-layout"><aside className="conversation-list"><div className="inbox-search"><Search size={17}/><input placeholder="Search conversations"/><button><Filter size={16}/></button></div><div className="inbox-tabs"><button className="active">Open <span>48</span></button><button>Mine <span>12</span></button><button>Unassigned <span>8</span></button></div>{chats.map((c,i)=><button key={c.id} className={`conversation-row ${active.id===c.id?"active":""}`} onClick={()=>setActive(c)}><span className={`avatar tone-${i%4}`}>{c.initials}</span><div><span><strong>{c.name}</strong><time>{c.time}</time></span><p>{c.preview}</p><small>{c.tag}</small></div>{c.unread>0&&<b>{c.unread}</b>}</button>)}</aside><section className="chat-panel"><header><div><span className="avatar tone-0">{active.initials}</span><div><h2>{active.name}</h2><p><i className="online"/>WhatsApp · Online</p></div></div><div><button className="button button-outline small"><UserRoundPlus size={16}/>Assign</button><button className="button button-dark small">Resolve</button></div></header><div className="chat-history"><div className="date-chip">Today</div>{messages.map((m,i)=><div key={i} className={`message ${i%2===0?"incoming":"outgoing"}`}><p>{m}</p><small>{i===0?"10:42 AM":i===1?"10:43 AM":"10:44 AM"}{i%2===1&&<Check size={13}/>}</small></div>)}<div className="ai-note"><Sparkles size={16}/><div><strong>AI summary</strong><p>Customer wants to change the delivery address for order PF-2048. Identity verification is still required.</p></div></div></div><form className="composer" onSubmit={e=>{e.preventDefault();if(reply.trim()){setMessages([...messages,reply]);setReply("")}}}><div className="composer-mode"><button type="button" className="active"><MessageCircleMore size={15}/>Reply</button><button type="button"><Bot size={15}/>AI assist</button><button type="button">Internal note</button></div><textarea value={reply} onChange={e=>setReply(e.target.value)} placeholder="Write a reply…"/><div><small>Enter to send · Shift + Enter for a new line</small><button className="button button-dark small" type="submit" disabled={!reply.trim()}><SendHorizontal size={16}/>Send</button></div></form></section><aside className="contact-panel"><span className="avatar large tone-0">{active.initials}</span><h3>{active.name}</h3><p>+91 98••• ••432</p><div className="contact-tags"><span>Customer</span><span>Kerala</span></div><dl><div><dt>Owner</dt><dd>Amina</dd></div><div><dt>Last order</dt><dd>PF-2048</dd></div><div><dt>Lifetime value</dt><dd>₹18,420</dd></div><div><dt>Consent</dt><dd className="good">Confirmed</dd></div></dl><button className="button button-outline full">Open customer profile</button></aside></div></ProductShell>}
+import { useEffect, useMemo, useState } from "react";
+import { ProductShell } from "@/components/product-shell";
+import { Check, Filter, MessageCircleMore, Search, SendHorizontal } from "@/components/icons";
+
+type Message = { id: string; direction: "inbound" | "outbound"; content: Record<string, unknown>; created_at: string };
+type Contact = { id: string; wa_id: string; display_name: string | null; consent_status: string };
+type Conversation = { id: string; status: string; ownership: string; last_message_at: string | null; contacts: Contact | Contact[]; messages: Message[] };
+
+function contactOf(conversation: Conversation) { return Array.isArray(conversation.contacts) ? conversation.contacts[0] : conversation.contacts; }
+function messageText(message?: Message) { if (!message) return "No message preview"; const text = message.content?.text; return typeof text === "string" && text ? text : `[${String(message.content?.type ?? "message")}]`; }
+function initials(value: string) { return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "WA"; }
+
+export default function InboxPage() {
+  const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [reply, setReply] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const workspaceResponse = await fetch("/api/v1/workspace", { cache: "no-store", signal: controller.signal });
+        const workspacePayload = await workspaceResponse.json() as { data?: { workspace: { id: string } | null } };
+        const tenantId = workspacePayload.data?.workspace?.id;
+        if (!workspaceResponse.ok || !tenantId) throw new Error("No active workspace is available");
+        const inboxResponse = await fetch(`/api/v1/inbox?tenantId=${encodeURIComponent(tenantId)}`, { cache: "no-store", signal: controller.signal });
+        const inboxPayload = await inboxResponse.json() as { data?: Conversation[] };
+        if (!inboxResponse.ok) throw new Error("Inbox data could not be loaded");
+        const rows = inboxPayload.data ?? [];
+        setConversations(rows);
+        setActiveId(rows[0]?.id ?? null);
+      } catch (loadError) {
+        if (loadError instanceof Error && loadError.name === "AbortError") return;
+        setError(loadError instanceof Error ? loadError.message : "Inbox data could not be loaded");
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, []);
+
+  const active = useMemo(() => conversations?.find((conversation) => conversation.id === activeId) ?? null, [activeId, conversations]);
+  const openCount = conversations?.filter((conversation) => conversation.status === "open").length ?? 0;
+  return <ProductShell title="Inbox"><div className="inbox-layout"><aside className="conversation-list"><div className="inbox-search"><Search size={17}/><input placeholder="Search conversations"/><button aria-label="Filter conversations"><Filter size={16}/></button></div><div className="inbox-tabs"><button className="active">Open <span>{openCount}</span></button><button>Mine <span>0</span></button><button>Unassigned <span>0</span></button></div>{error&&<div className="panel"><p>{error}</p></div>}{conversations===null&&!error&&<div className="panel"><p>Loading live inbox…</p></div>}{conversations?.length===0&&<div className="panel"><strong>No conversations yet</strong><p>Incoming messages from the connected Meta test number will appear here.</p></div>}{conversations?.map((conversation,index)=>{const contact=contactOf(conversation);const name=contact?.display_name||contact?.wa_id||"WhatsApp contact";const latest=conversation.messages?.[0];return <button key={conversation.id} className={`conversation-row ${activeId===conversation.id?"active":""}`} onClick={()=>setActiveId(conversation.id)}><span className={`avatar tone-${index%4}`}>{initials(name)}</span><div><span><strong>{name}</strong><time>{conversation.last_message_at?new Date(conversation.last_message_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):""}</time></span><p>{messageText(latest)}</p><small>{conversation.ownership}</small></div></button>})}</aside>{active?<><section className="chat-panel"><header><div><span className="avatar tone-0">{initials(contactOf(active)?.display_name||contactOf(active)?.wa_id||"WA")}</span><div><h2>{contactOf(active)?.display_name||contactOf(active)?.wa_id||"WhatsApp contact"}</h2><p>Official WhatsApp channel</p></div></div><div><button className="button button-dark small">{active.status}</button></div></header><div className="chat-history"><div className="date-chip">Conversation history</div>{[...(active.messages??[])].reverse().map((message)=><div key={message.id} className={`message ${message.direction==="inbound"?"incoming":"outgoing"}`}><p>{messageText(message)}</p><small>{new Date(message.created_at).toLocaleString()}{message.direction==="outbound"&&<Check size={13}/>}</small></div>)}</div><form className="composer" onSubmit={(event)=>event.preventDefault()}><div className="composer-mode"><button type="button" className="active"><MessageCircleMore size={15}/>Reply</button></div><textarea value={reply} onChange={(event)=>setReply(event.target.value)} placeholder="Write a reply…"/><div><small>Live sending remains locked during pilot verification.</small><button className="button button-dark small" type="submit" disabled><SendHorizontal size={16}/>Send</button></div></form></section><aside className="contact-panel"><span className="avatar large tone-0">{initials(contactOf(active)?.display_name||contactOf(active)?.wa_id||"WA")}</span><h3>{contactOf(active)?.display_name||"WhatsApp contact"}</h3><p>{contactOf(active)?.wa_id}</p><dl><div><dt>Conversation</dt><dd>{active.status}</dd></div><div><dt>Owner</dt><dd>{active.ownership}</dd></div><div><dt>Consent</dt><dd>{contactOf(active)?.consent_status}</dd></div></dl></aside></>:<section className="chat-panel"><div className="chat-history"><div className="ai-note"><MessageCircleMore size={18}/><div><strong>Your shared inbox is ready</strong><p>The Meta channel is connected. Send an inbound message to the test number after adding an approved recipient to begin the live receive test.</p></div></div></div></section>}</div></ProductShell>;
+}
