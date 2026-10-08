@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @passion-fruit/web",
     "build": "npm run build --workspace @passion-fruit/web",
+    "start": "npm run start --workspace @passion-fruit/web",
     "typecheck": "npm run typecheck --workspace @passion-fruit/web",
     "test": "vitest run",
     "test:watch": "vitest",
