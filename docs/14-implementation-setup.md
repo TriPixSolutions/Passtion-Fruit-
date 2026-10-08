@@ -18,7 +18,7 @@ Live sending is off by default. Setting `PF_LIVE_SENDS_ENABLED=true` is an opera
 6. Deploy `supabase/functions/meta-webhook` with JWT verification disabled for that function only. Set `PF_META_APP_SECRET`, `PF_META_WEBHOOK_VERIFY_TOKEN`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as Edge Function secrets.
 7. Configure the Meta webhook callback as `https://PROJECT.supabase.co/functions/v1/meta-webhook` and subscribe the authorised WhatsApp Business Account fields required by the pilot.
 8. Deploy the Next.js app to Hostinger and set the same application environment variables in hPanel. Use `npm run build` as the build command and `npm run start --workspace @passion-fruit/web` as the start command.
-9. Replace the placeholders in `supabase/snippets/configure_worker_cron.sql`, run it once, then confirm the worker heartbeat and queue age before enabling schedules.
+9. Apply `202610080001_worker_trigger.sql`, run `supabase/snippets/configure_worker_cron.sql` once, then confirm the worker invocation and queue age before enabling schedules. The cron token is generated inside Postgres and retained only as an encrypted Vault secret plus a SHA-256 digest.
 
 ## Hosted pilot status — 8 October 2026
 
