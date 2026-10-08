@@ -40,6 +40,8 @@ The Hostinger deployment is live at `https://lavender-pheasant-832363.hostingers
 
 The owner email and password are confirmed, the forced-password flag is cleared, and membership activation completed at authentication revision 2. The authenticated dashboard now reads the workspace name, role, feature grants, connected channel, inbox, agents and contacts from Supabase. Demo records were removed from these connected surfaces, so an empty hosted inbox and agent list are shown truthfully until pilot data arrives.
 
+The core dashboard pages no longer use sample business metrics or campaign records. Overview, shared inbox, contacts, one-off schedules, campaign drafts, workflow drafts, AI-agent creation and settings use authenticated tenant APIs. Inbox renders the verified inbound conversation and prepares replies through the idempotent outbound command; its send control follows the server-side live-send switch. Campaigns and workflows create safe drafts, while execution controls remain unavailable until their respective operational gates pass.
+
 A hosted two-tenant RLS verification created isolated synthetic tenants, proved that each user could read only its own tenant and contact, proved both cross-tenant reads returned zero rows, and removed all temporary records afterwards. The repeatable check is available as `npm run verify:hosted-rls` and requires the ignored local Supabase credentials.
 
 ## Required external verification

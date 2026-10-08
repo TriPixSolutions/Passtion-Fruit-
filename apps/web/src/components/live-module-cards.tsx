@@ -1,75 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Plus, X } from "./icons";
+import { apiData, loadWorkspace } from "@/lib/client-api";
 
 type Card = { id: string; title: string; detail: string; status: string };
-type WorkspacePayload = {
-  data?: {
-    workspace: { id: string; name: string; role: string } | null;
-    features: Array<{ key: string }>;
-    channels: Array<{ id: string; display_name: string; status: string }>;
-  };
-};
-
-function initials(value: string) {
-  return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "PF";
-}
+function initials(value: string) { return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "PF"; }
 
 export function LiveModuleCards({ section, fallback }: { section: string; fallback: string[] }) {
-  const [cards, setCards] = useState<Card[] | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      try {
-        if (!["agents", "contacts", "settings"].includes(section)) {
-          setCards(fallback.map((title, index) => ({ id: title, title, detail: "Open this item to view its full configuration and recent activity.", status: index === 1 ? "Review" : "Active" })));
-          return;
-        }
-        const workspaceResponse = await fetch("/api/v1/workspace", { cache: "no-store", signal: controller.signal });
-        if (!workspaceResponse.ok) throw new Error("Workspace data could not be loaded");
-        const workspacePayload = await workspaceResponse.json() as WorkspacePayload;
-        const workspace = workspacePayload.data?.workspace;
-        if (!workspace) throw new Error("No active workspace is assigned to this account");
-
-        if (section === "settings") {
-          const channels = workspacePayload.data?.channels ?? [];
-          setCards([
-            { id: "workspace", title: workspace.name, detail: `Your role: ${workspace.role}`, status: "Active" },
-            ...(channels.length ? channels.map((channel) => ({ id: channel.id, title: channel.display_name, detail: "Official Meta WhatsApp channel", status: channel.status })) : [{ id: "channel", title: "WhatsApp channel", detail: "No channel connected", status: "Setup" }]),
-            { id: "features", title: "Enabled modules", detail: `${workspacePayload.data?.features.length ?? 0} workspace features enabled`, status: "Active" },
-          ]);
-          return;
-        }
-
-        const response = await fetch(`/api/v1/${section}?tenantId=${encodeURIComponent(workspace.id)}`, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error(`${section === "agents" ? "Agent" : "Contact"} data could not be loaded`);
-        const payload = await response.json() as { data?: Array<Record<string, unknown>> };
-        const records = payload.data ?? [];
-        setCards(records.map((record) => section === "agents" ? {
-          id: String(record.id),
-          title: String(record.name ?? "Unnamed agent"),
-          detail: String(record.purpose ?? "No purpose configured"),
-          status: String(record.mode ?? "draft").replaceAll("_", " "),
-        } : {
-          id: String(record.id),
-          title: String(record.display_name ?? record.phone_e164 ?? record.wa_id ?? "Unnamed contact"),
-          detail: String(record.phone_e164 ?? record.wa_id ?? "WhatsApp contact"),
-          status: String(record.consent_status ?? "unknown").replaceAll("_", " "),
-        }));
-      } catch (loadError) {
-        if (loadError instanceof Error && loadError.name === "AbortError") return;
-        setError(loadError instanceof Error ? loadError.message : "Module data could not be loaded");
-      }
-    }
-    void load();
-    return () => controller.abort();
-  }, [fallback, section]);
-
-  if (error) return <section className="panel module-intro"><div><span className="eyebrow">Connection issue</span><h2>{error}</h2></div></section>;
-  if (cards === null) return <section className="panel module-intro"><div><span className="eyebrow">Loading</span><h2>Preparing live workspace data…</h2></div></section>;
-  if (cards.length === 0) return <section className="panel module-intro"><div><span className="eyebrow">Ready to configure</span><h2>No {section === "agents" ? "AI agents" : "contacts"} have been added yet.</h2></div></section>;
-
-  return <section className="module-cards">{cards.map((card, index) => <article className="panel" key={card.id}><div className="module-card-head"><span className={`avatar tone-${index % 4}`}>{initials(card.title)}</span><span className={`status ${card.status.toLowerCase() === "review" ? "review" : "running"}`}>{card.status}</span></div><h3>{card.title}</h3><p>{card.detail}</p><button className="button button-outline small">View details</button></article>)}</section>;
+  const [tenantId,setTenantId]=useState("");const [cards,setCards]=useState<Card[]|null>(null);const [error,setError]=useState("");const [open,setOpen]=useState(false);const [busy,setBusy]=useState(false);
+  const [name,setName]=useState("");const [phone,setPhone]=useState("");const [purpose,setPurpose]=useState("");
+  const load=useCallback(async(signal?:AbortSignal)=>{if(!["agents","contacts","settings"].includes(section)){setCards(fallback.map((title,index)=>({id:title,title,detail:"This module is planned for a later delivery milestone.",status:index===0?"Planned":"Roadmap"})));return}const workspace=await loadWorkspace(signal);if(!workspace.workspace)throw new Error("No active workspace is assigned to this account");setTenantId(workspace.workspace.id);if(section==="settings"){setCards([{id:"workspace",title:workspace.workspace.name,detail:`Your role: ${workspace.workspace.role}`,status:"Active"},...(workspace.channels.length?workspace.channels.map(channel=>({id:channel.id,title:channel.display_name,detail:"Official Meta WhatsApp channel",status:channel.status})):[{id:"channel",title:"WhatsApp channel",detail:"No channel connected",status:"Setup"}]),{id:"features",title:"Enabled modules",detail:`${workspace.features.length} workspace features enabled`,status:"Active"}]);return}const records=await apiData<Array<Record<string,unknown>>>(`/api/v1/${section}?tenantId=${workspace.workspace.id}`,{signal});setCards(records.map(record=>section==="agents"?{id:String(record.id),title:String(record.name??"Unnamed agent"),detail:String(record.purpose??"No purpose configured"),status:String(record.mode??"draft").replaceAll("_"," ")}:{id:String(record.id),title:String(record.display_name??record.phone_e164??record.wa_id??"Unnamed contact"),detail:String(record.phone_e164??record.wa_id??"WhatsApp contact"),status:String(record.consent_status??"unknown").replaceAll("_"," ")}));},[fallback,section]);
+  useEffect(()=>{const controller=new AbortController();load(controller.signal).catch(value=>{if(value instanceof Error&&value.name!=="AbortError")setError(value.message)});return()=>controller.abort()},[load]);
+  async function create(event:FormEvent){event.preventDefault();setBusy(true);setError("");try{if(section==="contacts"){const waId=phone.replace(/\D/g,"");await apiData("/api/v1/contacts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tenantId,waId,displayName:name,consentStatus:"unknown",attributes:{source:"manual"}})})}else{await apiData("/api/v1/agents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tenantId,name,purpose,mode:"suggest",instructions:"Suggest a helpful response using approved business information. Hand off when uncertain.",allowedTools:[],dailyBudgetMinor:0})})}setOpen(false);setName("");setPhone("");setPurpose("");await load();}catch(value){setError(value instanceof Error?value.message:"Record could not be created")}finally{setBusy(false)}}
+  const canCreate=section==="agents"||section==="contacts";
+  return <>{canCreate&&<div className="module-actions"><button className="button button-dark" onClick={()=>setOpen(true)}><Plus size={16}/>Add {section==="agents"?"agent":"contact"}</button></div>}{error&&<p className="form-error">{error}</p>}{cards===null?<section className="panel module-intro"><div><span className="eyebrow">Loading</span><h2>Preparing live workspace data…</h2></div></section>:cards.length===0?<section className="panel module-intro"><div><span className="eyebrow">Ready to configure</span><h2>No {section==="agents"?"AI agents":"contacts"} have been added yet.</h2></div></section>:<section className="module-cards">{cards.map((card,index)=><article className="panel" key={card.id}><div className="module-card-head"><span className={`avatar tone-${index%4}`}>{initials(card.title)}</span><span className={`status ${["active","suggest"].includes(card.status.toLowerCase())?"running":"review"}`}>{card.status}</span></div><h3>{card.title}</h3><p>{card.detail}</p></article>)}</section>}{open&&<div className="modal-backdrop"><div className="modal"><div className="panel-head"><div><span className="eyebrow">{section==="agents"?"Suggestion mode":"Customer record"}</span><h2>Add {section==="agents"?"AI agent":"contact"}</h2></div><button className="icon-button" onClick={()=>setOpen(false)} aria-label="Close"><X size={16}/></button></div><form onSubmit={create}><label>Name<input required minLength={2} maxLength={section==="agents"?80:120} value={name} onChange={event=>setName(event.target.value)}/></label>{section==="contacts"?<label>WhatsApp number<input required inputMode="numeric" placeholder="Country code and number" pattern="[0-9 +()-]{6,24}" value={phone} onChange={event=>setPhone(event.target.value)}/></label>:<label>Purpose<textarea required minLength={2} maxLength={240} value={purpose} onChange={event=>setPurpose(event.target.value)} placeholder="Example: qualify new sales leads"/></label>}<small>{section==="agents"?"New agents start in suggestion mode with no automatic sending or spend budget.":"Consent starts as unknown and must be updated from a recorded customer action."}</small><button className="button button-dark full" disabled={busy}>{busy?"Saving…":"Save"}</button></form></div></div>}</>;
 }

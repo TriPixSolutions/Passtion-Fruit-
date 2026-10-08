@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Brand } from "./brand";
 import {
   Bell, Bot, ChartNoAxesCombined, ContactRound, LayoutDashboard, Megaphone,
-  MessageCircleMore, Search, Settings2, ShoppingBag, UsersRound, Workflow,
+  MessageCircleMore, Search, Settings2, ShoppingBag, UsersRound, Workflow, CalendarClock,
 } from "./icons";
 
 type WorkspaceResponse = {
@@ -21,6 +21,7 @@ type WorkspaceResponse = {
 const items = [
   { label: "Overview", href: "/app", icon: LayoutDashboard },
   { label: "Inbox", href: "/app/inbox", icon: MessageCircleMore, feature: "shared_inbox" },
+  { label: "Schedules", href: "/app/schedules", icon: CalendarClock, feature: "schedules" },
   { label: "Campaigns", href: "/app/campaigns", icon: Megaphone, feature: "campaigns" },
   { label: "Workflows", href: "/app/workflows", icon: Workflow, feature: "workflows" },
   { label: "AI agents", href: "/app/agents", icon: Bot, feature: "ai_assist" },
