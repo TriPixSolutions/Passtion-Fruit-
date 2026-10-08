@@ -1,0 +1,16 @@
+{
+  "name": "passion-fruit",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @passion-fruit/web",
+    "build": "npm run build --workspace @passion-fruit/web",
+    "typecheck": "npm run typecheck --workspace @passion-fruit/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify:hosted-rls": "node scripts/verify-hosted-rls.mjs"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.3"
+  }
+}

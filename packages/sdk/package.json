@@ -1,0 +1,10 @@
+{
+  "name": "@passion-fruit/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@passion-fruit/contracts": "*"
+  }
+}

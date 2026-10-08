@@ -1,0 +1,13 @@
+# Credentials and local runtime output
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+*.tsbuildinfo

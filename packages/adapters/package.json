@@ -1,0 +1,15 @@
+{
+  "name": "@passion-fruit/adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./meta": "./src/meta/client.ts",
+    "./meta-webhook": "./src/meta/webhook.ts",
+    "./security": "./src/security/credentials.ts"
+  },
+  "dependencies": {
+    "@passion-fruit/domain": "*"
+  }
+}

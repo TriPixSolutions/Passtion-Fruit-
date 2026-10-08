@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: Passion Fruit API
+  version: 0.1.0
+  description: Tenant-scoped pilot API. Browser sessions use Supabase cookies; SDK clients use a Supabase bearer token.
+servers:
+  - url: https://app.example.com
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      security: []
+      summary: Read deployment configuration health without secret values
+      responses:
+        "200": { description: Required service configuration is present }
+        "503": { description: Configuration is incomplete }
+  /api/v1/admin/tenants:
+    post:
+      summary: Create a tenant and its first owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTenant" }
+      responses:
+        "201": { description: Tenant created and owner provisioned }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/admin/tenants/{tenantId}/features:
+    patch:
+      summary: Replace selected tenant feature grants
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Feature grants updated }
+  /api/v1/channels/meta:
+    post:
+      summary: Verify a Meta phone-number asset and store its access token encrypted
+      responses:
+        "201": { description: Channel connected }
+  /api/v1/contacts:
+    get:
+      summary: List tenant contacts
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Contact list } }
+    post:
+      summary: Create or update one WhatsApp contact
+      responses: { "201": { description: Contact saved } }
+  /api/v1/inbox:
+    get:
+      summary: List tenant conversations and recent messages
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Inbox projection } }
+  /api/v1/messages:
+    post:
+      summary: Create one duplicate-safe outbound message intent
+      responses:
+        "202": { description: Message accepted into the durable pipeline }
+  /api/v1/schedules:
+    get:
+      summary: List scheduled messages
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Schedule list } }
+    post:
+      summary: Persist a future message
+      responses: { "201": { description: Message scheduled } }
+  /api/v1/campaigns:
+    get:
+      summary: List campaigns
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Campaign list } }
+    post:
+      summary: Create a template campaign draft
+      responses: { "201": { description: Draft created } }
+  /api/v1/campaigns/{campaignId}/launch:
+    post:
+      summary: Snapshot opted-in recipients and start bounded expansion
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { "202": { description: Campaign queued } }
+  /api/v1/workflows:
+    get:
+      summary: List versioned workflows
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Workflow list } }
+    post:
+      summary: Create workflow version one as a draft
+      responses: { "201": { description: Draft created } }
+  /api/v1/workflows/{workflowId}/publish:
+    post:
+      summary: Validate and atomically activate one workflow version
+      parameters:
+        - { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { "200": { description: Workflow published } }
+  /api/v1/agents:
+    get:
+      summary: List AI agent configurations
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Agent list } }
+    post:
+      summary: Create a budgeted suggestion or auto-reply agent configuration
+      responses: { "201": { description: Agent created } }
+  /api/v1/analytics/summary:
+    get:
+      summary: Return basic tenant messaging counters
+      parameters: [ { $ref: "#/components/parameters/TenantId" } ]
+      responses: { "200": { description: Summary counters } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    TenantId:
+      name: tenantId
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    CreateTenant:
+      type: object
+      required: [name, slug, ownerEmail]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+        ownerEmail: { type: string, format: email }
+        accessMethod: { type: string, enum: [invite, temporary_password], default: invite }
+        temporaryPassword: { type: string, minLength: 12, writeOnly: true }
+        features: { type: array, items: { type: string } }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }
+  responses:
+    Forbidden:
+      description: The authenticated actor lacks the required platform or tenant role
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
