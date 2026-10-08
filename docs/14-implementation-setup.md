@@ -22,7 +22,7 @@ Live sending is off by default. Setting `PF_LIVE_SENDS_ENABLED=true` is an opera
 
 ## Hosted pilot status — 8 October 2026
 
-The Supabase pilot project `pfrgborqqtjgejfeowrg` is connected in the Mumbai region. All four migrations in `supabase/migrations` have been applied through the Supabase SQL editor. Verification found the 12 expected core tables and confirmed both the durable queue claim function and the authentication membership activation function.
+The Supabase pilot project `pfrgborqqtjgejfeowrg` is connected in the Mumbai region. All five migrations in `supabase/migrations` have been applied through the Supabase SQL editor. Verification found the 12 expected core tables and confirmed both the durable queue claim function and the authentication membership activation function.
 
 The web app has the project URL and publishable key in its ignored local environment file. The authentication Site URL is `https://lavender-pheasant-832363.hostingersite.com`; its production callback is allowed, with the localhost callback retained for development. The first Auth user, `tripixsolutions@gmail.com`, has been invited and verified as a platform administrator. The landing page also forwards Supabase invite tokens to the password setup screen.
 
@@ -33,6 +33,8 @@ The connected Meta app is `PASSION FROUT AUTO` (`28935872952719615`). Its WhatsA
 A temporary Meta test token is stored only in the ignored local environment and as an AES-256-GCM encrypted tenant credential in Supabase. A direct Graph inspection authenticated the test phone asset, returned the expected test number and verified name, and reported a green quality rating. The token is temporary and must be replaced by the production system-user or Embedded Signup credential flow before any real customer release.
 
 The hosted database now contains the `Passion Fruit Pilot` tenant with all current feature grants, an active owner membership for `tripixsolutions@gmail.com`, and the test WhatsApp channel. A signed webhook test was accepted, routed to that tenant, persisted, queued and completed by the private worker. A bad signature was rejected with HTTP 401.
+
+The official Meta test number completed a real two-way WhatsApp round trip with the approved pilot recipient. The outgoing `hello_world` template produced sent, delivered and read callbacks. The customer's `Hello Passion Fruit` reply reached the signed Edge Function, auto-saved the `Rishal` contact, opened a human-owned conversation and persisted one inbound message with `received` status. The cron worker completed the inbound job on its retry and marked the receipt processed. Migration `202610080002_inbound_message_idempotency.sql` replaces the partial provider-message index with a database unique constraint so PostgREST can perform concurrency-safe inbound upserts without duplicate messages.
 
 The Hostinger deployment is live at `https://lavender-pheasant-832363.hostingersite.com`. Its production `/api/health` endpoint reports the database and Meta configuration ready while `liveSends` remains `false`. Supabase `pg_cron` invokes the private worker every minute through `pg_net`; the bearer credential is generated in Postgres, stored encrypted in Vault and represented in the application table only by a SHA-256 digest. The first hosted invocation completed with cron status `succeeded`, HTTP 200 and no failed jobs. Production phone onboarding remains pending.
 
