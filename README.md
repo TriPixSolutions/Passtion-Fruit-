@@ -4,7 +4,7 @@
 
 Passion Fruit is a multi-tenant WhatsApp automation SaaS using Meta's official business messaging APIs. This kit defines the product, technical boundaries, core reliability rules, development sequence, and migration path from a two-customer Hostinger pilot to AWS.
 
-This repository now contains the development blueprint, the owner-approved responsive UI prototype, Supabase migrations, RLS policies, Auth lifecycle, a typed SDK, authenticated API routes, encrypted Meta channel storage, signed webhook ingestion, the durable outbox/queue worker and the first scheduling/automation data model. The owner Supabase project and Meta test asset are connected. Filled credentials stay in ignored local or hosted secret stores and are never committed. Hostinger deployment and GitHub publication remain pending.
+This repository now contains the development blueprint, the owner-approved responsive UI prototype, Supabase migrations, RLS policies, Auth lifecycle, a typed SDK, authenticated API routes, encrypted Meta channel storage, signed webhook ingestion, the durable outbox/queue worker and the first scheduling/automation data model. The owner Supabase project and Meta test asset are connected, and the verified source is published to the `TriPixSolutions/Passtion-Fruit-` GitHub repository. Filled credentials stay in ignored local or hosted secret stores and are never committed. Hostinger deployment remains pending.
 
 ## Owner overview — മലയാളം
 
@@ -39,7 +39,7 @@ Hostinger Cloud Startup-ൽ website / app deploy ചെയ്യാം എന്
 
 ## Current implementation milestone
 
-M1 and the connected portion of M2 are implemented: tenancy, membership activation, feature grants, credential encryption, provider verification, signed webhook receipt, inbox persistence, outbound intent creation, queue relay and a bounded worker. All migrations are applied to the owner Supabase project. The Meta test asset is connected and a signed webhook has completed the hosted receipt-to-queue-to-worker path. The next gates are accepting the owner invitation, running the two-tenant denial suite, deploying to Hostinger, onboarding a permitted recipient and completing one owner-approved receive/send/status round trip before enabling live sends.
+M1 and the connected portion of M2 are implemented: tenancy, membership activation, feature grants, credential encryption, provider verification, signed webhook receipt, inbox persistence, outbound intent creation, queue relay and a bounded worker. All migrations are applied to the owner Supabase project. Owner activation and the hosted two-tenant denial suite passed. The Meta test asset is connected and a signed webhook completed the hosted receipt-to-queue-to-worker path. The next gates are deploying to Hostinger, onboarding a permitted recipient and completing one owner-approved receive/send/status round trip before enabling live sends.
 
 ## Documentation conventions
 
