@@ -21,7 +21,7 @@ describe("message state machine", () => {
 
 describe("workflow graph validation", () => {
   it("accepts a connected minimal workflow", () => {
-    expect(validateWorkflowGraph({ nodes: [{ id: "start", type: "trigger" }, { id: "reply", type: "message" }], edges: [{ source: "start", target: "reply" }] })).toEqual({ valid: true, errors: [] });
+    expect(validateWorkflowGraph({ nodes: [{ id: "start", type: "trigger" }, { id: "reply", type: "message", config: { content: { type: "text", text: "Hello" } } }], edges: [{ source: "start", target: "reply" }] })).toEqual({ valid: true, errors: [] });
   });
 
   it("rejects duplicate ids and invalid edges", () => {
@@ -47,6 +47,30 @@ describe("workflow graph validation", () => {
       ],
     }, "Can I see the PRICE?");
     expect(actions).toEqual([{ type: "message", nodeId: "reply", content: { type: "text", text: "Here is our pricing." }, delaySeconds: 60 }]);
+  });
+
+  it("plans contact, status and private-note operations", () => {
+    const actions = planWorkflowExecution({
+      nodes: [
+        { id: "trigger", type: "trigger" },
+        { id: "contact", type: "contact", config: { lifecycleStage: "qualified" } },
+        { id: "status", type: "status", config: { status: "open" } },
+        { id: "note", type: "note", config: { body: "Qualified by inbound workflow" } },
+        { id: "end", type: "end" },
+      ],
+      edges: [{source:"trigger",target:"contact"},{source:"contact",target:"status"},{source:"status",target:"note"},{source:"note",target:"end"}],
+    });
+    expect(actions).toEqual([
+      { type: "contact", nodeId: "contact", lifecycleStage: "qualified" },
+      { type: "status", nodeId: "status", status: "open" },
+      { type: "note", nodeId: "note", body: "Qualified by inbound workflow" },
+    ]);
+  });
+
+  it("rejects orphan nodes and incomplete conditions", () => {
+    const result = validateWorkflowGraph({nodes:[{id:"trigger",type:"trigger"},{id:"condition",type:"condition"},{id:"orphan",type:"end"}],edges:[{source:"trigger",target:"condition"},{source:"condition",target:"trigger",branch:"true"}]});
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(expect.arrayContaining(["Condition needs true and false branches: condition","Node is not reachable from trigger: orphan"]));
   });
 });
 

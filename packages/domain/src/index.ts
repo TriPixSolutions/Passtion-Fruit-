@@ -15,7 +15,7 @@ export type JobKind = "inbound" | "outbound" | "campaign" | "schedule" | "workfl
 
 export interface WorkflowNode {
   id: string;
-  type: "trigger" | "condition" | "message" | "delay" | "assign" | "agent" | "end";
+  type: "trigger" | "condition" | "message" | "delay" | "assign" | "contact" | "status" | "note" | "agent" | "end";
   config?: Record<string, unknown>;
 }
 
@@ -43,6 +43,22 @@ export function validateWorkflowGraph(graph: WorkflowGraph): WorkflowValidationR
     if (edge.source === edge.target) errors.push(`Node cannot connect to itself: ${edge.source}`);
   }
   if (triggers[0] && graph.edges.some((edge) => edge.target === triggers[0].id)) errors.push("Trigger cannot have an incoming edge");
+  if (triggers[0]) {
+    const reachable = new Set<string>(); const pending = [triggers[0].id];
+    while (pending.length) { const current = pending.pop()!; if (reachable.has(current)) continue; reachable.add(current); for (const edge of graph.edges.filter((item) => item.source === current)) pending.push(edge.target); }
+    for (const node of graph.nodes) if (!reachable.has(node.id)) errors.push(`Node is not reachable from trigger: ${node.id}`);
+  }
+  for (const node of graph.nodes) {
+    const outgoing = graph.edges.filter((edge) => edge.source === node.id);
+    if (node.type === "end" && outgoing.length) errors.push(`End node cannot have outgoing edges: ${node.id}`);
+    if (node.type !== "condition" && outgoing.length > 1) errors.push(`Node can only have one outgoing edge: ${node.id}`);
+    if (node.type === "condition") {
+      if (!outgoing.some((edge) => edge.branch === "true") || !outgoing.some((edge) => edge.branch === "false")) errors.push(`Condition needs true and false branches: ${node.id}`);
+      if (!['contains','equals','starts_with','ends_with'].includes(String(node.config?.operator ?? 'contains'))) errors.push(`Invalid condition operator at node: ${node.id}`);
+    }
+    if (node.type === "delay") { const seconds=Number(node.config?.seconds); if(!Number.isFinite(seconds)||seconds<1||seconds>2592000) errors.push(`Invalid delay at node: ${node.id}`); }
+    if (node.type === "message") { const content=node.config?.content as MessageContent|undefined; if(!content||(content.type!=="text"&&content.type!=="template")) errors.push(`Invalid message at node: ${node.id}`); }
+  }
   return { valid: errors.length === 0, errors };
 }
 
@@ -64,7 +80,10 @@ export type MessageContent =
 
 export type WorkflowAction =
   | { type: "message"; nodeId: string; content: MessageContent; delaySeconds: number }
-  | { type: "assign"; nodeId: string; userId?: string };
+  | { type: "assign"; nodeId: string; userId?: string }
+  | { type: "contact"; nodeId: string; lifecycleStage?: string; tagId?: string }
+  | { type: "status"; nodeId: string; status: string }
+  | { type: "note"; nodeId: string; body: string };
 
 function nextWorkflowEdge(graph: WorkflowGraph, source: string, branch?: string): WorkflowEdge | undefined {
   const outgoing = graph.edges.filter((edge) => edge.source === source);
@@ -111,6 +130,22 @@ export function planWorkflowExecution(graph: WorkflowGraph, triggerText = ""): W
     if (node.type === "assign") {
       const userId = typeof node.config?.userId === "string" ? node.config.userId : undefined;
       actions.push({ type: "assign", nodeId: node.id, ...(userId ? { userId } : {}) });
+    }
+    if (node.type === "contact") {
+      const lifecycleStage = typeof node.config?.lifecycleStage === "string" ? node.config.lifecycleStage : undefined;
+      const tagId = typeof node.config?.tagId === "string" ? node.config.tagId : undefined;
+      if (!lifecycleStage && !tagId) throw new Error(`Invalid contact update at node: ${node.id}`);
+      actions.push({ type: "contact", nodeId: node.id, ...(lifecycleStage ? { lifecycleStage } : {}), ...(tagId ? { tagId } : {}) });
+    }
+    if (node.type === "status") {
+      const status = typeof node.config?.status === "string" ? node.config.status : "";
+      if (!status) throw new Error(`Invalid conversation status at node: ${node.id}`);
+      actions.push({ type: "status", nodeId: node.id, status });
+    }
+    if (node.type === "note") {
+      const body = typeof node.config?.body === "string" ? node.config.body.trim() : "";
+      if (!body) throw new Error(`Invalid note at node: ${node.id}`);
+      actions.push({ type: "note", nodeId: node.id, body });
     }
     if (node.type === "agent") throw new Error(`AI agent execution is not configured for node: ${node.id}`);
     if (node.type === "end") break;

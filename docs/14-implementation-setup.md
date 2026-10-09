@@ -22,7 +22,7 @@ Live sending is off by default. Setting `PF_LIVE_SENDS_ENABLED=true` is an opera
 
 ## Hosted pilot status — 9 October 2026
 
-The Supabase pilot project `pfrgborqqtjgejfeowrg` is connected in the Mumbai region. All eleven migrations in `supabase/migrations` have been applied through the Supabase SQL editor. Verification confirmed the durable queue claim function, authentication membership activation function, shared-inbox operations, Contact 360/team foundation and consent-safe campaign audience engine.
+The Supabase pilot project `pfrgborqqtjgejfeowrg` is connected in the Mumbai region. All twelve migrations in `supabase/migrations` have been applied through the Supabase SQL editor. Verification confirmed the durable queue claim function, authentication membership activation function, shared-inbox operations, Contact 360/team foundation, consent-safe campaign audience engine and workflow run observability.
 
 The web app has the project URL and publishable key in its ignored local environment file. The authentication Site URL is `https://lavender-pheasant-832363.hostingersite.com`; its production callback is allowed, with the localhost callback retained for development. The first Auth user, `tripixsolutions@gmail.com`, has been invited and verified as a platform administrator. The landing page also forwards Supabase invite tokens to the password setup screen.
 

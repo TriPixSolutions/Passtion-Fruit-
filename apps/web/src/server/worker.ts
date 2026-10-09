@@ -167,7 +167,7 @@ async function processOutbound(admin: SupabaseClient, job: ClaimedJob): Promise<
 
 async function processWorkflow(admin: SupabaseClient, job: ClaimedJob): Promise<JobResult> {
   const runId = String(job.payload.run_id ?? "");
-  const { data: run, error: runError } = await admin.from("workflow_runs").select("id,tenant_id,workflow_id,workflow_version,conversation_id,trigger_message_id,status").eq("id", runId).single();
+  const { data: run, error: runError } = await admin.from("workflow_runs").select("id,tenant_id,workflow_id,workflow_version,conversation_id,trigger_message_id,status,attempt").eq("id", runId).single();
   if (runError || !run) return { success: false, error: runError?.message ?? "workflow_run_not_found" };
   if (["completed", "cancelled"].includes(run.status)) return { success: true };
 
@@ -184,55 +184,42 @@ async function processWorkflow(admin: SupabaseClient, job: ClaimedJob): Promise<
 
     for (const action of actions) {
       await admin.from("workflow_runs").update({ current_node_id: action.nodeId }).eq("id", run.id).eq("tenant_id", run.tenant_id);
-      if (action.type === "assign") {
-        ownershipGeneration += 1;
-        const { error } = await admin.from("conversations").update({ ownership: "human", assigned_user_id: action.userId ?? null, ownership_generation: ownershipGeneration, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", run.tenant_id);
-        if (error) throw error;
-        continue;
-      }
-
-      const idempotencyKey = `workflow:${run.id}:${action.nodeId}`;
-      if (action.delaySeconds > 0) {
-        const dueAt = new Date(Date.now() + action.delaySeconds * 1000);
-        const { error } = await admin.from("scheduled_messages").upsert({
-          tenant_id: run.tenant_id,
-          channel_id: conversation.channel_id,
-          contact_id: conversation.contact_id,
-          conversation_id: conversation.id,
-          content: action.content,
-          origin: "workflow",
-          due_at: dueAt.toISOString(),
-          expires_at: new Date(dueAt.getTime() + 24 * 60 * 60_000).toISOString(),
-          status: "scheduled",
-          idempotency_key: idempotencyKey,
-        }, { onConflict: "tenant_id,idempotency_key", ignoreDuplicates: true });
-        if (error) throw error;
-        continue;
-      }
-
-      let messageId = (await admin.from("messages").select("id").eq("tenant_id", run.tenant_id).eq("idempotency_key", idempotencyKey).maybeSingle()).data?.id;
-      if (!messageId) {
-        const { data: message, error } = await admin.from("messages").insert({
-          tenant_id: run.tenant_id,
-          conversation_id: conversation.id,
-          channel_id: conversation.channel_id,
-          contact_id: conversation.contact_id,
-          direction: "outbound",
-          origin: "workflow",
-          status: "queued",
-          idempotency_key: idempotencyKey,
-          content: action.content,
-          expires_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
-        }).select("id").single();
-        if (error || !message) throw error ?? new Error("workflow_message_create_failed");
-        messageId = message.id;
-      }
-      const existingJob = await admin.from("jobs").select("id").eq("kind", "outbound").eq("payload->>message_id", messageId).neq("status", "dead").limit(1).maybeSingle();
-      if (!existingJob.data) {
-        const { data: outboundJob, error } = await admin.from("jobs").insert({ tenant_id: run.tenant_id, kind: "outbound", payload: { message_id: messageId } }).select("id").single();
-        if (error || !outboundJob) throw error ?? new Error("workflow_job_create_failed");
-        const { error: outboxError } = await admin.from("outbox").insert({ tenant_id: run.tenant_id, topic: "job.outbound", payload: { job_id: outboundJob.id, kind: "outbound" } });
-        if (outboxError) throw outboxError;
+      const { data: step, error: stepError } = await admin.from("workflow_run_steps").upsert({ tenant_id: run.tenant_id, run_id: run.id, node_id: action.nodeId, node_type: action.type, attempt: run.attempt, status: "running", input: action, output: {}, error: null, started_at: new Date().toISOString(), finished_at: null }, { onConflict: "run_id,node_id,attempt" }).select("id").single();
+      if (stepError || !step) throw stepError ?? new Error("workflow_step_create_failed");
+      try {
+        let output: Record<string, unknown> = {};
+        if (action.type === "assign") {
+          ownershipGeneration += 1;
+          const { error } = await admin.from("conversations").update({ ownership: "human", assigned_user_id: action.userId ?? null, ownership_generation: ownershipGeneration, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", run.tenant_id);
+          if (error) throw error; output = { ownership: "human", assignedUserId: action.userId ?? null };
+        } else if (action.type === "contact") {
+          if (action.lifecycleStage) { const { error } = await admin.from("contacts").update({ lifecycle_stage: action.lifecycleStage, updated_at: new Date().toISOString() }).eq("id", conversation.contact_id).eq("tenant_id", run.tenant_id); if (error) throw error; }
+          if (action.tagId) { const { data: tag } = await admin.from("tags").select("id").eq("id", action.tagId).eq("tenant_id", run.tenant_id).maybeSingle(); if (!tag) throw new Error("workflow_tag_not_found"); const { error } = await admin.from("contact_tags").upsert({ tenant_id: run.tenant_id, contact_id: conversation.contact_id, tag_id: action.tagId }, { onConflict: "contact_id,tag_id", ignoreDuplicates: true }); if (error) throw error; }
+          output = { lifecycleStage: action.lifecycleStage ?? null, tagId: action.tagId ?? null };
+        } else if (action.type === "status") {
+          const allowed = new Set(["new","open","pending","waiting_customer","waiting_internal","escalated","resolved","blocked","spam"]); if (!allowed.has(action.status)) throw new Error("workflow_conversation_status_invalid");
+          const { error } = await admin.from("conversations").update({ status: action.status, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", run.tenant_id); if (error) throw error; output = { status: action.status };
+        } else if (action.type === "note") {
+          const { data: note, error } = await admin.from("conversation_notes").insert({ tenant_id: run.tenant_id, conversation_id: conversation.id, body: action.body }).select("id").single(); if (error || !note) throw error ?? new Error("workflow_note_failed"); output = { noteId: note.id };
+        } else {
+          const idempotencyKey = `workflow:${run.id}:${action.nodeId}`;
+          if (action.delaySeconds > 0) {
+            const dueAt = new Date(Date.now() + action.delaySeconds * 1000);
+            const { error } = await admin.from("scheduled_messages").upsert({ tenant_id: run.tenant_id, channel_id: conversation.channel_id, contact_id: conversation.contact_id, conversation_id: conversation.id, content: action.content, origin: "workflow", due_at: dueAt.toISOString(), expires_at: new Date(dueAt.getTime() + 24 * 60 * 60_000).toISOString(), status: "scheduled", idempotency_key: idempotencyKey }, { onConflict: "tenant_id,idempotency_key", ignoreDuplicates: true });
+            if (error) throw error; output = { scheduledAt: dueAt.toISOString() };
+          } else {
+            let messageId = (await admin.from("messages").select("id").eq("tenant_id", run.tenant_id).eq("idempotency_key", idempotencyKey).maybeSingle()).data?.id;
+            if (!messageId) { const { data: message, error } = await admin.from("messages").insert({ tenant_id: run.tenant_id, conversation_id: conversation.id, channel_id: conversation.channel_id, contact_id: conversation.contact_id, direction: "outbound", origin: "workflow", status: "queued", idempotency_key: idempotencyKey, content: action.content, expires_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString() }).select("id").single(); if (error || !message) throw error ?? new Error("workflow_message_create_failed"); messageId = message.id; }
+            const existingJob = await admin.from("jobs").select("id").eq("kind", "outbound").eq("payload->>message_id", messageId).neq("status", "dead").limit(1).maybeSingle();
+            if (!existingJob.data) { const { data: outboundJob, error } = await admin.from("jobs").insert({ tenant_id: run.tenant_id, kind: "outbound", payload: { message_id: messageId } }).select("id").single(); if (error || !outboundJob) throw error ?? new Error("workflow_job_create_failed"); const { error: outboxError } = await admin.from("outbox").insert({ tenant_id: run.tenant_id, topic: "job.outbound", payload: { job_id: outboundJob.id, kind: "outbound" } }); if (outboxError) throw outboxError; }
+            output = { messageId };
+          }
+        }
+        await admin.from("workflow_run_steps").update({ status: "completed", output, finished_at: new Date().toISOString() }).eq("id", step.id);
+      } catch (actionError) {
+        const detail = actionError instanceof Error ? actionError.message : "workflow_step_failed";
+        await admin.from("workflow_run_steps").update({ status: "failed", error: detail, finished_at: new Date().toISOString() }).eq("id", step.id);
+        throw actionError;
       }
     }
 
