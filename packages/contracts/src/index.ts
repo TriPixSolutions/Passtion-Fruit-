@@ -82,6 +82,10 @@ export const agentSchema = z.object({
   instructions: z.string().trim().max(12_000).default(""),
   allowedTools: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
   dailyBudgetMinor: z.number().int().nonnegative().max(1_000_000).default(0),
+  tone: z.enum(["professional","helpful","friendly","concise"]).default("helpful"),
+  supportedLanguages: z.array(z.string().trim().min(2).max(12)).min(1).max(20).default(["en"]),
+  confidenceThreshold: z.number().min(0).max(1).default(0.65),
+  guardrails: z.object({ handoffOnMissingSource: z.boolean().default(true), handoffOnSensitiveIntent: z.boolean().default(true), prohibitedTopics: z.array(z.string().trim().min(1).max(120)).max(50).default([]) }).default({ handoffOnMissingSource:true, handoffOnSensitiveIntent:true, prohibitedTopics:[] }),
 });
 
 export const workflowDraftSchema = z.object({
