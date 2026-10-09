@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const { tenantId } = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
     const { client } = await requireUser(request);
-    const { data, error } = await client.from("campaigns").select("id,name,status,channel_id,template,audience_filter,scheduled_at,audience_snapshot_at,eligible_count,excluded_count,created_at,updated_at,campaign_recipients(status)").eq("tenant_id", tenantId).order("updated_at", { ascending: false });
+    const { data, error } = await client.from("campaigns").select("id,name,status,approval_status,recipient_cap,approval_requested_at,approved_at,approved_by,channel_id,template,audience_filter,scheduled_at,audience_snapshot_at,eligible_count,excluded_count,created_at,updated_at,campaign_recipients(status),campaign_approval_events(action,reason,created_at)").eq("tenant_id", tenantId).order("updated_at", { ascending: false });
     if (error) throw error;
     const rows = await Promise.all((data ?? []).map(async (campaign) => {
       const statuses = (campaign.campaign_recipients ?? []) as Array<{status:string}>;
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       if (tagError) throw tagError;
       if ((tags ?? []).length !== input.audienceFilter.tagIds.length) throw new ApiAuthError("invalid_audience_tag", 400);
     }
-    const { data, error } = await client.from("campaigns").insert({ tenant_id: input.tenantId, name: input.name, status: input.scheduledAt ? "scheduled" : "draft", channel_id: input.channelId, template: input.template, audience_filter: input.audienceFilter, scheduled_at: input.scheduledAt, created_by: user.id }).select("id,name,status,created_at").single();
+    const { data, error } = await client.from("campaigns").insert({ tenant_id: input.tenantId, name: input.name, status: "draft", approval_status: "not_requested", channel_id: input.channelId, template: input.template, audience_filter: input.audienceFilter, scheduled_at: input.scheduledAt, created_by: user.id }).select("id,name,status,approval_status,created_at").single();
     if (error) throw error;
     return ok(data, id, 201);
   } catch (error) { return failure(error, id); }
