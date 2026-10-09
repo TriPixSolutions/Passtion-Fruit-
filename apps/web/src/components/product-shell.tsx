@@ -26,6 +26,7 @@ const items = [
   { label: "Workflows", href: "/app/workflows", icon: Workflow, feature: "workflows" },
   { label: "AI agents", href: "/app/agents", icon: Bot, feature: "ai_assist" },
   { label: "Contacts", href: "/app/contacts", icon: ContactRound, feature: "contacts" },
+  { label: "CRM", href: "/app/crm", icon: UsersRound, feature: "crm" },
   { label: "Commerce", href: "/app/commerce", icon: ShoppingBag, feature: "commerce" },
   { label: "Analytics", href: "/app/reports", icon: ChartNoAxesCombined, feature: "analytics" },
   { label: "Team", href: "/app/team", icon: UsersRound },

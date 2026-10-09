@@ -11,6 +11,7 @@ export const featureKeys = [
   "ai_auto_reply",
   "analytics",
   "commerce",
+  "crm",
 ] as const;
 
 export const createTenantSchema = z.object({

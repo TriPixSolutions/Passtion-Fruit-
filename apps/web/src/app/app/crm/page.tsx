@@ -1,0 +1,1 @@
+import{ProductShell}from"@/components/product-shell";import{CrmWorkspace}from"@/components/crm-workspace";export default function CrmPage(){return <ProductShell title="CRM"><CrmWorkspace/></ProductShell>}

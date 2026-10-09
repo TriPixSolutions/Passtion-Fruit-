@@ -6,7 +6,7 @@ import { Brand } from "@/components/brand";
 import { Bell, Check, ChevronDown, LayoutDashboard, LockKeyhole, Mail, Plus, Search, Settings2, SlidersHorizontal, UserRoundPlus, UsersRound, X } from "@/components/icons";
 
 const labels: Record<(typeof featureKeys)[number], string> = {
-  shared_inbox: "Shared inbox", manual_messages: "Manual messages", contacts: "Contacts", campaigns: "Campaigns", schedules: "Schedules", workflows: "Workflows", ai_assist: "AI assist", ai_auto_reply: "AI auto-reply", analytics: "Analytics", commerce: "Commerce",
+  shared_inbox: "Shared inbox", manual_messages: "Manual messages", contacts: "Contacts", campaigns: "Campaigns", schedules: "Schedules", workflows: "Workflows", ai_assist: "AI assist", ai_auto_reply: "AI auto-reply", analytics: "Analytics", commerce: "Commerce", crm: "CRM",
 };
 
 type Tenant = {
