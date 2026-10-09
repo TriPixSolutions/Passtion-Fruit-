@@ -12,9 +12,9 @@ alter table public.contacts
 
 alter table public.contacts
   add constraint contacts_assignee_fk foreign key (tenant_id, assigned_user_id)
-    references public.memberships(tenant_id, user_id) on delete set null,
+    references public.memberships(tenant_id, user_id) on delete set null (assigned_user_id),
   add constraint contacts_team_fk foreign key (team_id, tenant_id)
-    references public.teams(id, tenant_id) on delete set null;
+    references public.teams(id, tenant_id) on delete set null (team_id);
 
 create table public.tags (
   id uuid primary key default gen_random_uuid(),

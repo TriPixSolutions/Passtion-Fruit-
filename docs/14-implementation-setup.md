@@ -2,7 +2,7 @@
 
 ## What is implemented
 
-The repository now contains an executable tenant and messaging foundation rather than only reference contracts. The database migrations create tenant membership, feature grants, audit history, encrypted integration credential records, Meta channels, contacts, conversations, messages, attempts, status events, signed webhook receipts, durable jobs, a transactional outbox, Supabase Queue relay functions, schedules, campaigns, workflow versions/runs, AI-agent configuration and usage records.
+The repository now contains an executable tenant and messaging foundation rather than only reference contracts. The database migrations create tenant membership, feature grants, audit history, encrypted integration credential records, Meta channels, contacts, conversations, messages, attempts, status events, signed webhook receipts, durable jobs, a transactional outbox, Supabase Queue relay functions, schedules, campaigns, workflow versions/runs, AI-agent configuration and usage records. The operational data model also includes teams, private notes, Contact 360 lifecycle/score/consent fields, tags, saved replies and SLA policies.
 
 The Next.js runtime exposes health, platform tenant provisioning, tenant feature updates, inbox reads, outbound intent creation, Meta channel connection and a private bounded worker endpoint. Server modules verify Supabase users, preserve RLS, encrypt per-channel tokens with AES-256-GCM and call Meta through one adapter. The public Meta webhook is a Supabase Edge Function because Hostinger restarts must not affect webhook durability.
 
@@ -20,9 +20,9 @@ Live sending is off by default. Setting `PF_LIVE_SENDS_ENABLED=true` is an opera
 8. Deploy the Next.js app to Hostinger and set the same application environment variables in hPanel. Use `npm run build` as the build command and `npm run start --workspace @passion-fruit/web` as the start command.
 9. Apply `202610080001_worker_trigger.sql`, run `supabase/snippets/configure_worker_cron.sql` once, then confirm the worker invocation and queue age before enabling schedules. The cron token is generated inside Postgres and retained only as an encrypted Vault secret plus a SHA-256 digest.
 
-## Hosted pilot status — 8 October 2026
+## Hosted pilot status — 9 October 2026
 
-The Supabase pilot project `pfrgborqqtjgejfeowrg` is connected in the Mumbai region. All five migrations in `supabase/migrations` have been applied through the Supabase SQL editor. Verification found the 12 expected core tables and confirmed both the durable queue claim function and the authentication membership activation function.
+The Supabase pilot project `pfrgborqqtjgejfeowrg` is connected in the Mumbai region. All ten migrations in `supabase/migrations` have been applied through the Supabase SQL editor. Verification confirmed the durable queue claim function, authentication membership activation function, shared-inbox operations and the Contact 360/team foundation.
 
 The web app has the project URL and publishable key in its ignored local environment file. The authentication Site URL is `https://lavender-pheasant-832363.hostingersite.com`; its production callback is allowed, with the localhost callback retained for development. The first Auth user, `tripixsolutions@gmail.com`, has been invited and verified as a platform administrator. The landing page also forwards Supabase invite tokens to the password setup screen.
 
