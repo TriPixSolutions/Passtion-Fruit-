@@ -1,0 +1,1 @@
+import{ProductShell}from"@/components/product-shell";import{OperationsWorkspace}from"@/components/operations-workspace";export default function OperationsPage(){return <ProductShell title="Operations"><OperationsWorkspace/></ProductShell>}

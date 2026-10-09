@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Brand } from "./brand";
 import {
-  Bell, Bot, ChartNoAxesCombined, ContactRound, LayoutDashboard, Megaphone,
+  Bell, Bot, ChartNoAxesCombined, ContactRound, LayoutDashboard, Megaphone, ShieldCheck,
   MessageCircleMore, Search, Settings2, ShoppingBag, UsersRound, Workflow, CalendarClock,
 } from "./icons";
 
@@ -29,6 +29,7 @@ const items = [
   { label: "CRM", href: "/app/crm", icon: UsersRound, feature: "crm" },
   { label: "Commerce", href: "/app/commerce", icon: ShoppingBag, feature: "commerce" },
   { label: "Analytics", href: "/app/reports", icon: ChartNoAxesCombined, feature: "analytics" },
+  { label: "Operations", href: "/app/operations", icon: ShieldCheck },
   { label: "Team", href: "/app/team", icon: UsersRound },
 ] as const;
 
