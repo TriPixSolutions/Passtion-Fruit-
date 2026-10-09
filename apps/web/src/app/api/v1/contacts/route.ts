@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const input = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
     const { client } = await requireUser(request);
-    let query = client.from("contacts").select("id,wa_id,phone_e164,display_name,consent_status,attributes,updated_at").eq("tenant_id", input.tenantId).order("updated_at", { ascending: false }).limit(100);
+    let query = client.from("contacts").select("id,wa_id,phone_e164,display_name,consent_status,consent_source,consent_updated_at,lifecycle_stage,lead_score,source,assigned_user_id,team_id,attributes,updated_at,contact_tags(tag_id,tags(id,name,color))").eq("tenant_id", input.tenantId).order("updated_at", { ascending: false }).limit(100);
     if (input.search) {
       const search = input.search.replace(/[^\p{L}\p{N}+ _-]/gu, "");
       if (search) query = query.or(`display_name.ilike.%${search}%,wa_id.ilike.%${search}%`);
