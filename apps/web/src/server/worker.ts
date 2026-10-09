@@ -130,8 +130,10 @@ async function processOutbound(admin: SupabaseClient, job: ClaimedJob): Promise<
     admin.from("contacts").select("wa_id,consent_status").eq("id", message.contact_id).eq("tenant_id", message.tenant_id).single(),
   ]);
   if (!channel || channel.status !== "active" || !contact) return { success: false, error: "channel_or_contact_unavailable" };
-  if (contact.consent_status === "opted_out") {
-    await admin.from("messages").update({ status: "cancelled", error_code: "contact_opted_out" }).eq("id", message.id);
+  const { data: suppression } = await admin.from("contact_suppressions").select("id").eq("tenant_id", message.tenant_id).eq("contact_id", message.contact_id).eq("active", true).maybeSingle();
+  const consentBlocked = message.origin === "campaign" ? contact.consent_status !== "opted_in" : contact.consent_status === "opted_out";
+  if (consentBlocked || suppression) {
+    await admin.from("messages").update({ status: "cancelled", error_code: suppression ? "contact_suppressed" : "contact_consent_blocked" }).eq("id", message.id);
     if (message.origin === "campaign") await admin.from("campaign_recipients").update({ status: "skipped" }).eq("message_id", message.id);
     return { success: true };
   }

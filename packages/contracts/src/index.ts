@@ -103,7 +103,12 @@ export const campaignDraftSchema = z.object({
     language: z.string().trim().min(2).max(20),
     components: z.array(z.record(z.string(), z.unknown())).optional(),
   }),
-  audienceFilter: z.record(z.string(), z.unknown()).default({}),
+  audienceFilter: z.object({
+    lifecycleStages: z.array(z.enum(["lead","qualified","opportunity","customer","repeat_customer","win_back","inactive"])).max(7).default([]),
+    tagIds: z.array(z.uuid()).max(30).default([]),
+    minLeadScore: z.number().int().min(0).max(100).default(0),
+    source: z.string().trim().max(80).optional(),
+  }).strict().default({ lifecycleStages: [], tagIds: [], minLeadScore: 0 }),
   scheduledAt: z.iso.datetime().optional(),
 });
 
