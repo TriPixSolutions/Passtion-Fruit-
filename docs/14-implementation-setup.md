@@ -4,7 +4,7 @@
 
 The repository now contains an executable tenant and messaging foundation rather than only reference contracts. The database migrations create tenant membership, feature grants, audit history, encrypted integration credential records, Meta channels, contacts, conversations, messages, attempts, status events, signed webhook receipts, durable jobs, a transactional outbox, Supabase Queue relay functions, schedules, campaigns, workflow versions/runs, AI-agent configuration and usage records. The operational data model also includes teams, private notes, Contact 360 lifecycle/score/consent fields, tags, saved replies and SLA policies.
 
-The Next.js runtime exposes health, platform tenant provisioning, tenant feature updates, inbox reads, outbound intent creation, Meta channel connection and a private bounded worker endpoint. Server modules verify Supabase users, preserve RLS, encrypt per-channel tokens with AES-256-GCM and call Meta through one adapter. The public Meta webhook is a Supabase Edge Function because Hostinger restarts must not affect webhook durability.
+The Next.js runtime exposes health, platform tenant provisioning, tenant feature updates, inbox operations, Contact 360, teams, saved replies, SLA policies, outbound intent creation, Meta channel connection and a private bounded worker endpoint. Server modules verify Supabase users, preserve RLS, encrypt per-channel tokens with AES-256-GCM and call Meta through one adapter. The public Meta webhook is a Supabase Edge Function because Hostinger restarts must not affect webhook durability.
 
 Live sending is off by default. Setting `PF_LIVE_SENDS_ENABLED=true` is an operational release step only after an authorised Meta test number, recipient and current supported Graph version are verified.
 
