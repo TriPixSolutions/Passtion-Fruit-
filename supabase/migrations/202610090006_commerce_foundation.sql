@@ -98,6 +98,7 @@ create table public.commerce_order_items (
   quantity integer not null check (quantity > 0),
   unit_price_minor bigint not null default 0 check (unit_price_minor >= 0),
   created_at timestamptz not null default now(),
+  unique (order_id, variant_id),
   foreign key (order_id, tenant_id) references public.commerce_orders(id, tenant_id) on delete cascade,
   foreign key (product_id, tenant_id) references public.commerce_products(id, tenant_id) on delete set null,
   foreign key (variant_id, tenant_id) references public.commerce_variants(id, tenant_id) on delete set null
@@ -160,8 +161,8 @@ begin
   on conflict(connection_id,external_id) do update set sku=excluded.sku,price_minor=excluded.price_minor,currency=excluded.currency,inventory_quantity=excluded.inventory_quantity,updated_at=now() returning id into v_variant_id;
   insert into public.commerce_orders(tenant_id,connection_id,external_id,order_number,customer_name,customer_phone,currency,subtotal_minor,total_minor,financial_status,fulfillment_status,placed_at) values(v_connection.tenant_id,v_connection.id,p_order->>'externalId',p_order->>'orderNumber',nullif(p_order->>'customerName',''),nullif(p_order->>'customerPhone',''),p_order->>'currency',(p_order->>'totalMinor')::bigint,(p_order->>'totalMinor')::bigint,p_order->>'financialStatus',p_order->>'fulfillmentStatus',(p_order->>'placedAt')::timestamptz)
   on conflict(connection_id,external_id) do update set total_minor=excluded.total_minor,financial_status=excluded.financial_status,fulfillment_status=excluded.fulfillment_status,updated_at=now() returning id into v_order_id;
-  delete from public.commerce_order_items where order_id=v_order_id and tenant_id=v_connection.tenant_id;
-  insert into public.commerce_order_items(tenant_id,order_id,product_id,variant_id,title,sku,quantity,unit_price_minor) values(v_connection.tenant_id,v_order_id,v_product_id,v_variant_id,p_product->>'title',nullif(p_product->>'sku',''),1,(p_product->>'priceMinor')::bigint);
+  insert into public.commerce_order_items(tenant_id,order_id,product_id,variant_id,title,sku,quantity,unit_price_minor) values(v_connection.tenant_id,v_order_id,v_product_id,v_variant_id,p_product->>'title',nullif(p_product->>'sku',''),1,(p_product->>'priceMinor')::bigint)
+  on conflict(order_id,variant_id) do update set title=excluded.title,sku=excluded.sku,quantity=excluded.quantity,unit_price_minor=excluded.unit_price_minor;
   update public.integration_connections set last_sync_at=now(),updated_at=now(),last_error=null where id=v_connection.id;
   insert into public.commerce_events(tenant_id,connection_id,provider_event_id,event_type,payload,processed_at) values(v_connection.tenant_id,v_connection.id,'sandbox-'||(p_order->>'externalId'),'order.synced',jsonb_build_object('orderId',v_order_id,'productId',v_product_id),now()) on conflict(connection_id,provider_event_id) do nothing;
   return jsonb_build_object('productId',v_product_id,'orderId',v_order_id);
