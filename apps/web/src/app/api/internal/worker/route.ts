@@ -25,9 +25,21 @@ async function authorised(request: Request): Promise<boolean> {
 
 export async function POST(request: Request) {
   const id = requestId(request);
+  const started = Date.now();
   try {
     if (!(await authorised(request))) return Response.json({ error: { code: "worker_auth_failed", message: "Worker authentication failed", requestId: id } }, { status: 401 });
-    return ok(await runWorkerBatch(), id);
+    const admin = createAdminClient();
+    const { data: run, error: runError } = await admin.from("worker_runs").insert({ request_id: id, status: "running" }).select("id").single();
+    if (runError || !run) throw runError ?? new Error("worker_run_create_failed");
+    try {
+      const result = await runWorkerBatch();
+      const { error: finishError } = await admin.from("worker_runs").update({ status: "succeeded", ...result, duration_ms: Date.now() - started, finished_at: new Date().toISOString() }).eq("id", run.id);
+      if (finishError) throw finishError;
+      return ok(result, id);
+    } catch (workerError) {
+      await admin.from("worker_runs").update({ status: "failed", duration_ms: Date.now() - started, error_category: "worker_batch_failed", finished_at: new Date().toISOString() }).eq("id", run.id);
+      throw workerError;
+    }
   } catch (error) {
     return failure(error, id);
   }
