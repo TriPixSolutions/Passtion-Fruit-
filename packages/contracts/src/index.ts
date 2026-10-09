@@ -116,6 +116,22 @@ export const campaignDraftSchema = z.object({
   scheduledAt: z.iso.datetime().optional(),
 });
 
+export const commerceConnectionSchema = z.object({
+  tenantId: z.uuid(),
+  category: z.enum(["store","crm"]).default("store"),
+  provider: z.enum(["shopify","woocommerce","custom"]),
+  name: z.string().trim().min(2).max(100),
+  baseUrl: z.url().max(500).optional(),
+  sandbox: z.boolean().default(false),
+});
+
+export const commerceSandboxImportSchema = z.object({
+  tenantId: z.uuid(),
+  connectionId: z.uuid(),
+  product: z.object({ externalId:z.string().trim().min(1).max(120), title:z.string().trim().min(1).max(240), sku:z.string().trim().max(120).optional(), priceMinor:z.number().int().nonnegative().max(1_000_000_000), currency:z.string().regex(/^[A-Z]{3}$/).default("INR"), inventoryQuantity:z.number().int().min(0).max(100_000).optional() }),
+  order: z.object({ externalId:z.string().trim().min(1).max(120), orderNumber:z.string().trim().min(1).max(120), customerName:z.string().trim().max(160).optional(), customerPhone:z.string().trim().max(32).optional(), totalMinor:z.number().int().nonnegative().max(1_000_000_000), currency:z.string().regex(/^[A-Z]{3}$/).default("INR"), financialStatus:z.enum(["pending","authorized","paid","partially_refunded","refunded","voided"]).default("paid"), fulfillmentStatus:z.enum(["unfulfilled","partial","fulfilled","cancelled","returned"]).default("unfulfilled"), placedAt:z.iso.datetime() }),
+});
+
 export type CreateTenantInput = z.infer<typeof createTenantSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type ConnectMetaChannelInput = z.infer<typeof connectMetaChannelSchema>;
@@ -124,6 +140,8 @@ export type ScheduleMessageInput = z.infer<typeof scheduleMessageSchema>;
 export type AgentInput = z.infer<typeof agentSchema>;
 export type WorkflowDraftInput = z.infer<typeof workflowDraftSchema>;
 export type CampaignDraftInput = z.infer<typeof campaignDraftSchema>;
+export type CommerceConnectionInput = z.infer<typeof commerceConnectionSchema>;
+export type CommerceSandboxImportInput = z.infer<typeof commerceSandboxImportSchema>;
 
 export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string; details?: unknown };
