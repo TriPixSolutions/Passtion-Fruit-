@@ -7,7 +7,11 @@ import { apiData, loadWorkspace } from "@/lib/client-api";
 
 type Message = { id: string; direction: "inbound" | "outbound"; status: string; content: Record<string, unknown>; created_at: string };
 type Contact = { id: string; wa_id: string; display_name: string | null; consent_status: string };
-type Conversation = { id: string; channel_id: string; contact_id: string; status: string; ownership: string; ownership_generation: number; last_message_at: string | null; contacts: Contact | Contact[]; messages: Message[] };
+type Note = { id: string; body: string; author_id: string | null; created_at: string };
+type Member = { user_id: string; role: string; display_name: string };
+type Team = { id: string; name: string; capacity: number };
+type Conversation = { id: string; channel_id: string; contact_id: string; status: string; ownership: string; ownership_generation: number; assigned_user_id: string | null; team_id: string | null; last_message_at: string | null; contacts: Contact | Contact[]; messages: Message[]; conversation_notes: Note[] };
+type InboxData = { conversations: Conversation[]; members: Member[]; teams: Team[] };
 
 function contactOf(conversation: Conversation) { return Array.isArray(conversation.contacts) ? conversation.contacts[0] : conversation.contacts; }
 function messageText(message?: Message) { if (!message) return "No message preview"; const text = message.content?.text; return typeof text === "string" && text ? text : `[${String(message.content?.type ?? "message")}]`; }
@@ -16,17 +20,22 @@ function initials(value: string) { return value.split(/\s+/).filter(Boolean).map
 export default function InboxPage() {
   const [tenantId, setTenantId] = useState("");
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [liveSends, setLiveSends] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const [queue, setQueue] = useState("open");
+  const [search, setSearch] = useState("");
+  const [note, setNote] = useState("");
 
   const loadInbox = useCallback(async (workspaceId: string, signal?: AbortSignal) => {
-    const rows = await apiData<Conversation[]>(`/api/v1/inbox?tenantId=${encodeURIComponent(workspaceId)}`, { signal });
-    setConversations(rows);
-    setActiveId((current) => current && rows.some((row) => row.id === current) ? current : rows[0]?.id ?? null);
+    const result = await apiData<InboxData>(`/api/v1/inbox?tenantId=${encodeURIComponent(workspaceId)}`, { signal });
+    setConversations(result.conversations); setMembers(result.members); setTeams(result.teams);
+    setActiveId((current) => current && result.conversations.some((row) => row.id === current) ? current : result.conversations[0]?.id ?? null);
   }, []);
 
   useEffect(() => {
@@ -53,6 +62,29 @@ export default function InboxPage() {
 
   const active = useMemo(() => conversations?.find((conversation) => conversation.id === activeId) ?? null, [activeId, conversations]);
   const openCount = conversations?.filter((conversation) => conversation.status === "open").length ?? 0;
+  const unassignedCount = conversations?.filter((conversation) => !conversation.assigned_user_id).length ?? 0;
+  const visibleConversations = useMemo(() => (conversations ?? []).filter((conversation) => {
+    const contact = contactOf(conversation); const haystack = `${contact?.display_name ?? ""} ${contact?.wa_id ?? ""} ${messageText(conversation.messages?.[0])}`.toLowerCase();
+    const queueMatch = queue === "all" || (queue === "open" && !["resolved", "spam", "blocked"].includes(conversation.status)) || (queue === "unassigned" && !conversation.assigned_user_id);
+    return queueMatch && haystack.includes(search.trim().toLowerCase());
+  }), [conversations, queue, search]);
+
+  async function updateConversation(changes: Record<string, unknown>) {
+    if (!active || !tenantId) return;
+    setError("");
+    try {
+      await apiData(`/api/v1/inbox/${active.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ tenantId, ...changes }) });
+      await loadInbox(tenantId); setNotice("Conversation updated.");
+    } catch (updateError) { setError(updateError instanceof Error ? updateError.message : "Conversation could not be updated"); }
+  }
+
+  async function addNote(event: FormEvent) {
+    event.preventDefault(); if (!active || !tenantId || !note.trim()) return;
+    try {
+      await apiData(`/api/v1/inbox/${active.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tenantId, body: note.trim() }) });
+      setNote(""); await loadInbox(tenantId); setNotice("Private note added.");
+    } catch (noteError) { setError(noteError instanceof Error ? noteError.message : "Note could not be added"); }
+  }
 
   async function sendReply(event: FormEvent) {
     event.preventDefault();
@@ -69,5 +101,5 @@ export default function InboxPage() {
     finally { setSending(false); }
   }
 
-  return <ProductShell title="Inbox"><div className="inbox-layout"><aside className="conversation-list"><div className="inbox-search"><Search size={17}/><input placeholder="Search conversations"/><button aria-label="Filter conversations"><Filter size={16}/></button></div><div className="inbox-tabs"><button className="active">Open <span>{openCount}</span></button><button>Mine <span>0</span></button><button>Unassigned <span>0</span></button></div>{conversations===null&&!error&&<div className="panel"><p>Loading live inbox…</p></div>}{conversations?.length===0&&<div className="panel"><strong>No conversations yet</strong><p>Incoming messages from the connected Meta number will appear here.</p></div>}{conversations?.map((conversation,index)=>{const contact=contactOf(conversation);const name=contact?.display_name||contact?.wa_id||"WhatsApp contact";const latest=conversation.messages?.[0];return <button key={conversation.id} className={`conversation-row ${activeId===conversation.id?"active":""}`} onClick={()=>setActiveId(conversation.id)}><span className={`avatar tone-${index%4}`}>{initials(name)}</span><div><span><strong>{name}</strong><time>{conversation.last_message_at?new Date(conversation.last_message_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):""}</time></span><p>{messageText(latest)}</p><small>{conversation.ownership}</small></div></button>})}</aside>{active?<><section className="chat-panel"><header><div><span className="avatar tone-0">{initials(contactOf(active)?.display_name||contactOf(active)?.wa_id||"WA")}</span><div><h2>{contactOf(active)?.display_name||contactOf(active)?.wa_id||"WhatsApp contact"}</h2><p>Official WhatsApp channel</p></div></div><button className="button button-dark small">{active.status}</button></header><div className="chat-history"><div className="date-chip">Conversation history</div>{[...(active.messages??[])].reverse().map((message)=><div key={message.id} className={`message ${message.direction==="inbound"?"incoming":"outgoing"}`}><p>{messageText(message)}</p><small>{new Date(message.created_at).toLocaleString()}{message.direction==="outbound"&&<><Check size={13}/>{message.status}</>}</small></div>)}</div><form className="composer" onSubmit={sendReply}><div className="composer-mode"><button type="button" className="active"><MessageCircleMore size={15}/>Reply</button></div><textarea value={reply} onChange={(event)=>setReply(event.target.value)} placeholder="Write a reply…" maxLength={4096}/>{error&&<p className="form-error">{error}</p>}{notice&&<p className="form-success">{notice}</p>}<div><small>{liveSends?"Messages use the official Meta Cloud API.":"Live sending is locked until the permanent Meta credential is activated."}</small><button className="button button-dark small" type="submit" disabled={!liveSends||sending||!reply.trim()}><SendHorizontal size={16}/>{sending?"Queueing…":"Send"}</button></div></form></section><aside className="contact-panel"><span className="avatar large tone-0">{initials(contactOf(active)?.display_name||contactOf(active)?.wa_id||"WA")}</span><h3>{contactOf(active)?.display_name||"WhatsApp contact"}</h3><p>{contactOf(active)?.wa_id}</p><dl><div><dt>Conversation</dt><dd>{active.status}</dd></div><div><dt>Owner</dt><dd>{active.ownership}</dd></div><div><dt>Consent</dt><dd>{contactOf(active)?.consent_status}</dd></div></dl></aside></>:<section className="chat-panel"><div className="chat-history"><div className="ai-note"><MessageCircleMore size={18}/><div><strong>Your shared inbox is ready</strong><p>Incoming WhatsApp conversations are stored here automatically.</p></div></div></div></section>}</div></ProductShell>;
+  return <ProductShell title="Inbox"><div className="inbox-layout"><aside className="conversation-list"><div className="inbox-search"><Search size={17}/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Search conversations"/><button aria-label="Filter conversations"><Filter size={16}/></button></div><div className="inbox-tabs"><button className={queue==="open"?"active":""} onClick={()=>setQueue("open")}>Open <span>{openCount}</span></button><button className={queue==="all"?"active":""} onClick={()=>setQueue("all")}>All <span>{conversations?.length??0}</span></button><button className={queue==="unassigned"?"active":""} onClick={()=>setQueue("unassigned")}>Unassigned <span>{unassignedCount}</span></button></div>{conversations===null&&!error&&<div className="panel"><p>Loading live inbox…</p></div>}{conversations?.length===0&&<div className="panel"><strong>No conversations yet</strong><p>Incoming messages from the connected Meta number will appear here.</p></div>}{visibleConversations.map((conversation,index)=>{const contact=contactOf(conversation);const name=contact?.display_name||contact?.wa_id||"WhatsApp contact";const latest=conversation.messages?.[0];return <button key={conversation.id} className={`conversation-row ${activeId===conversation.id?"active":""}`} onClick={()=>setActiveId(conversation.id)}><span className={`avatar tone-${index%4}`}>{initials(name)}</span><div><span><strong>{name}</strong><time>{conversation.last_message_at?new Date(conversation.last_message_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):""}</time></span><p>{messageText(latest)}</p><small>{conversation.status} · {conversation.ownership}</small></div></button>})}</aside>{active?<><section className="chat-panel"><header><div><span className="avatar tone-0">{initials(contactOf(active)?.display_name||contactOf(active)?.wa_id||"WA")}</span><div><h2>{contactOf(active)?.display_name||contactOf(active)?.wa_id||"WhatsApp contact"}</h2><p>Official WhatsApp channel</p></div></div><select className="inbox-status" value={active.status} onChange={(event)=>void updateConversation({status:event.target.value})}>{["new","open","pending","waiting_customer","waiting_internal","escalated","resolved","spam"].map((status)=><option key={status} value={status}>{status.replaceAll("_"," ")}</option>)}</select></header><div className="chat-history"><div className="date-chip">Conversation history</div>{[...(active.messages??[])].reverse().map((message)=><div key={message.id} className={`message ${message.direction==="inbound"?"incoming":"outgoing"}`}><p>{messageText(message)}</p><small>{new Date(message.created_at).toLocaleString()}{message.direction==="outbound"&&<><Check size={13}/>{message.status}</>}</small></div>)}</div><form className="composer" onSubmit={sendReply}><div className="composer-mode"><button type="button" className="active"><MessageCircleMore size={15}/>Reply</button></div><textarea value={reply} onChange={(event)=>setReply(event.target.value)} placeholder="Write a reply…" maxLength={4096}/>{error&&<p className="form-error">{error}</p>}{notice&&<p className="form-success">{notice}</p>}<div><small>{liveSends?"Messages use the official Meta Cloud API.":"Live sending is locked until the permanent Meta credential is activated."}</small><button className="button button-dark small" type="submit" disabled={!liveSends||sending||!reply.trim()}><SendHorizontal size={16}/>{sending?"Queueing…":"Send"}</button></div></form></section><aside className="contact-panel"><span className="avatar large tone-0">{initials(contactOf(active)?.display_name||contactOf(active)?.wa_id||"WA")}</span><h3>{contactOf(active)?.display_name||"WhatsApp contact"}</h3><p>{contactOf(active)?.wa_id}</p><dl><div><dt>Consent</dt><dd>{contactOf(active)?.consent_status}</dd></div></dl><label className="inbox-field">Assigned agent<select value={active.assigned_user_id??""} onChange={(event)=>void updateConversation({assignedUserId:event.target.value||null,ownership:"human"})}><option value="">Unassigned</option>{members.map((member)=><option key={member.user_id} value={member.user_id}>{member.display_name}</option>)}</select></label><label className="inbox-field">Team<select value={active.team_id??""} onChange={(event)=>void updateConversation({teamId:event.target.value||null})}><option value="">No team</option>{teams.map((team)=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label><section className="private-notes"><h4>Private notes</h4>{[...(active.conversation_notes??[])].reverse().map((entry)=><article key={entry.id}><p>{entry.body}</p><small>{new Date(entry.created_at).toLocaleString()}</small></article>)}<form onSubmit={addNote}><textarea value={note} onChange={(event)=>setNote(event.target.value)} placeholder="Add an internal note" maxLength={4000}/><button className="button small" disabled={!note.trim()}>Add note</button></form></section></aside></>:<section className="chat-panel"><div className="chat-history"><div className="ai-note"><MessageCircleMore size={18}/><div><strong>Your shared inbox is ready</strong><p>Incoming WhatsApp conversations are stored here automatically.</p></div></div></div></section>}</div></ProductShell>;
 }
