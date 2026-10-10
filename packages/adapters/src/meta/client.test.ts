@@ -44,4 +44,14 @@ describe("MetaCloudApiClient", () => {
     const calls:string[]=[];const client=new MetaCloudApiClient({accessToken:"test-token",graphVersion:"v24.0",phoneNumberId:"123456",fetch:async(input)=>{calls.push(String(input));return calls.length===1?Response.json({data:[{id:"1",name:"hello_world",language:"en_US",category:"UTILITY",status:"APPROVED",components:[]}],paging:{next:"https://graph.facebook.com/v24.0/waba/message_templates?after=next"}}):Response.json({data:[{id:"2",name:"order_update",language:"en_US",category:"UTILITY",status:"PAUSED",components:[]}]})}});
     await expect(client.listMessageTemplates("waba")).resolves.toMatchObject([{name:"hello_world",status:"APPROVED"},{name:"order_update",status:"PAUSED"}]);expect(calls).toHaveLength(2);
   });
+
+  it("downloads media only from a trusted Meta host", async()=>{
+    let call=0;const client=new MetaCloudApiClient({accessToken:"test-token",graphVersion:"v24.0",phoneNumberId:"123456",fetch:async()=>{call+=1;return call===1?Response.json({url:"https://lookaside.fbsbx.com/whatsapp_business/attachments/test",mime_type:"audio/ogg",file_size:4,sha256:"hash"}):new Response(new Uint8Array([1,2,3,4]),{headers:{"content-type":"audio/ogg","content-length":"4"}})}});
+    await expect(client.downloadMedia("media-1")).resolves.toMatchObject({mimeType:"audio/ogg",fileSize:4,sha256:"hash"});
+  });
+
+  it("rejects an untrusted media download host", async()=>{
+    const client=new MetaCloudApiClient({accessToken:"test-token",graphVersion:"v24.0",phoneNumberId:"123456",fetch:async()=>Response.json({url:"https://example.com/private",mime_type:"image/jpeg",file_size:4})});
+    await expect(client.downloadMedia("media-1")).rejects.toThrow("invalid media download URL");
+  });
 });

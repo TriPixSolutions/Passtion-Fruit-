@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { decryptCredential, MetaCloudApiClient } from "@passion-fruit/adapters";
 import { planWorkflowExecution, type MessageContent, type MessageStatus, type WorkflowGraph } from "@passion-fruit/domain";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -26,8 +27,8 @@ function inboundContent(message: Record<string, unknown>): Record<string, unknow
   if (type === "interactive") return { type, interactive: message.interactive ?? {} };
   const media = message[type];
   if (media && typeof media === "object") {
-    const value = media as { id?: unknown; mime_type?: unknown; caption?: unknown };
-    return { type, mediaId: value.id, mimeType: value.mime_type, caption: value.caption };
+    const value = media as { id?: unknown; mime_type?: unknown; caption?: unknown; filename?: unknown };
+    return { type, mediaId: value.id, mimeType: value.mime_type, caption: value.caption, fileName: value.filename };
   }
   return { type, unsupported: true };
 }
@@ -60,7 +61,7 @@ async function processInbound(admin: SupabaseClient, job: ClaimedJob): Promise<J
   const receiptId = String(job.payload.receipt_id ?? "");
   const { data: receipt, error } = await admin.from("webhook_receipts").select("id,tenant_id,phone_number_id,payload,state").eq("id", receiptId).single();
   if (error || !receipt?.tenant_id) return { success: false, error: error?.message ?? "receipt_not_found" };
-  const { data: channel } = await admin.from("channels").select("id").eq("tenant_id", receipt.tenant_id).eq("phone_number_id", receipt.phone_number_id).single();
+  const { data: channel } = await admin.from("channels").select("id,phone_number_id,credential_id").eq("tenant_id", receipt.tenant_id).eq("phone_number_id", receipt.phone_number_id).single();
   if (!channel) return { success: false, error: "channel_not_found" };
 
   const payload = receipt.payload as { entry?: Array<{ changes?: Array<{ value?: Record<string, unknown> }> }> };
@@ -87,6 +88,21 @@ async function processInbound(admin: SupabaseClient, job: ClaimedJob): Promise<J
           .single();
         if (conversationError || !conversation) return { success: false, error: conversationError?.message ?? "conversation_upsert_failed" };
         const occurredAt = providerMessage.timestamp ? new Date(Number(providerMessage.timestamp) * 1000).toISOString() : new Date().toISOString();
+        const content = inboundContent(providerMessage);
+        const mediaId = typeof content.mediaId === "string" ? content.mediaId : null;
+        if (mediaId && ["image","audio","video","document","sticker"].includes(String(content.type))) {
+          const { data: credential, error: credentialError } = await admin.from("integration_credentials").select("ciphertext,iv,auth_tag").eq("id",channel.credential_id).eq("tenant_id",receipt.tenant_id).single();
+          if (credentialError || !credential) return { success:false,error:credentialError?.message??"credential_unavailable" };
+          const env=workerEnvironment();
+          const token=decryptCredential({ciphertext:credential.ciphertext,iv:credential.iv,authTag:credential.auth_tag},env.credentialKey);
+          const provider=new MetaCloudApiClient({accessToken:token,graphVersion:env.graphVersion,phoneNumberId:channel.phone_number_id});
+          const downloaded=await provider.downloadMedia(mediaId);
+          const key=createHash("sha256").update(providerMessageId).digest("hex");
+          const path=`${receipt.tenant_id}/${conversation.id}/${key}`;
+          const {error:uploadError}=await admin.storage.from("message-media").upload(path,downloaded.bytes,{contentType:downloaded.mimeType,upsert:true});
+          if(uploadError)return{success:false,error:uploadError.message};
+          content.mediaPath=path;content.mimeType=downloaded.mimeType;content.fileSize=downloaded.fileSize;content.sha256=downloaded.sha256;delete content.mediaId;
+        }
         const { data: savedMessage, error: messageError } = await admin.from("messages").upsert({
           tenant_id: receipt.tenant_id,
           conversation_id: conversation.id,
@@ -96,7 +112,7 @@ async function processInbound(admin: SupabaseClient, job: ClaimedJob): Promise<J
           origin: "customer",
           status: "received",
           provider_message_id: providerMessageId,
-          content: inboundContent(providerMessage),
+          content,
           created_at: occurredAt,
         }, { onConflict: "tenant_id,provider_message_id", ignoreDuplicates: true }).select("id").maybeSingle();
         if (messageError) return { success: false, error: messageError.message };

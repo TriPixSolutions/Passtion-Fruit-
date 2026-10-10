@@ -13,6 +13,9 @@ export interface MetaClientOptions {
 }
 
 export type MetaMessageTemplate = { id:string;name:string;language:string;category:string;status:string;components:Array<Record<string,unknown>>;qualityScore?:Record<string,unknown> };
+export type MetaMediaDownload = { bytes: Uint8Array; mimeType: string; sha256?: string; fileSize: number };
+
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
 
 export class MetaCloudApiClient {
   private readonly fetchImpl: typeof fetch;
@@ -44,6 +47,26 @@ export class MetaCloudApiClient {
     for(let page=0;url&&page<20;page+=1){const parsed=new URL(url);if(parsed.protocol!=="https:"||parsed.hostname!=="graph.facebook.com")throw new Error("Meta returned an invalid template pagination URL");const response=await this.fetchImpl(url,{headers:{Authorization:`Bearer ${this.options.accessToken}`}});const payload=await response.json().catch(()=>({})) as {data?:Array<{id?:string;name?:string;language?:string;category?:string;status?:string;components?:Array<Record<string,unknown>>;quality_score?:Record<string,unknown>}>;paging?:{next?:string};error?:{message?:string}};if(!response.ok||!Array.isArray(payload.data))throw new Error(payload.error?.message??"Meta template synchronization failed");for(const item of payload.data){if(item.id&&item.name&&item.language&&item.category&&item.status)templates.push({id:item.id,name:item.name,language:item.language,category:item.category,status:item.status,components:item.components??[],qualityScore:item.quality_score})}url=payload.paging?.next??""}
     if(url)throw new Error("Meta template pagination exceeded the safety limit");
     return templates;
+  }
+
+  async downloadMedia(mediaId: string): Promise<MetaMediaDownload> {
+    const metadataResponse = await this.fetchImpl(
+      `https://graph.facebook.com/${this.options.graphVersion}/${encodeURIComponent(mediaId)}`,
+      { headers: { Authorization: `Bearer ${this.options.accessToken}` } },
+    );
+    const metadata = await metadataResponse.json().catch(() => ({})) as { url?: string; mime_type?: string; file_size?: number; sha256?: string; error?: { message?: string } };
+    if (!metadataResponse.ok || !metadata.url || !metadata.mime_type) throw new Error(metadata.error?.message ?? "Meta media metadata could not be loaded");
+    if (metadata.file_size && metadata.file_size > MAX_MEDIA_BYTES) throw new Error("Meta media exceeds the 20 MB pilot limit");
+    const mediaUrl = new URL(metadata.url);
+    const trustedHost = ["facebook.com", "fbcdn.net", "fbsbx.com"].some((suffix) => mediaUrl.hostname === suffix || mediaUrl.hostname.endsWith(`.${suffix}`));
+    if (mediaUrl.protocol !== "https:" || !trustedHost) throw new Error("Meta returned an invalid media download URL");
+    const mediaResponse = await this.fetchImpl(mediaUrl, { headers: { Authorization: `Bearer ${this.options.accessToken}` } });
+    if (!mediaResponse.ok) throw new Error("Meta media download failed");
+    const declaredLength = Number(mediaResponse.headers.get("content-length") ?? metadata.file_size ?? 0);
+    if (declaredLength > MAX_MEDIA_BYTES) throw new Error("Meta media exceeds the 20 MB pilot limit");
+    const bytes = new Uint8Array(await mediaResponse.arrayBuffer());
+    if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error("Meta media exceeds the 20 MB pilot limit");
+    return { bytes, mimeType: metadata.mime_type, sha256: metadata.sha256, fileSize: bytes.byteLength };
   }
 
   async send(to: string, content: MessageContent, signal?: AbortSignal): Promise<MetaSendResult> {
