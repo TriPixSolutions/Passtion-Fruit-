@@ -31,6 +31,9 @@ export async function POST(request: Request) {
     const input = campaignDraftSchema.parse(await readJson(request));
     if (input.scheduledAt && new Date(input.scheduledAt).getTime() <= Date.now()) throw new Error("scheduledAt must be in the future");
     const { client, user } = await requireTenantRole(request, input.tenantId, ["owner","manager"]);
+    const { data: approvedTemplate, error: templateError } = await client.from("whatsapp_message_templates").select("id").eq("tenant_id",input.tenantId).eq("channel_id",input.channelId).eq("name",input.template.name).eq("language",input.template.language).eq("status","APPROVED").maybeSingle();
+    if(templateError)throw templateError;
+    if(!approvedTemplate)throw new ApiAuthError("approved_template_required",400);
     if (input.audienceFilter.tagIds.length) {
       const { data: tags, error: tagError } = await client.from("tags").select("id").eq("tenant_id", input.tenantId).in("id", input.audienceFilter.tagIds);
       if (tagError) throw tagError;

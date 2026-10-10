@@ -39,4 +39,9 @@ describe("MetaCloudApiClient", () => {
     });
     await expect(client.inspectPhoneNumber()).resolves.toMatchObject({ id: "123456", verifiedName: "Serein Labs" });
   });
+
+  it("loads every approved-template page from the WABA", async()=>{
+    const calls:string[]=[];const client=new MetaCloudApiClient({accessToken:"test-token",graphVersion:"v24.0",phoneNumberId:"123456",fetch:async(input)=>{calls.push(String(input));return calls.length===1?Response.json({data:[{id:"1",name:"hello_world",language:"en_US",category:"UTILITY",status:"APPROVED",components:[]}],paging:{next:"https://graph.facebook.com/v24.0/waba/message_templates?after=next"}}):Response.json({data:[{id:"2",name:"order_update",language:"en_US",category:"UTILITY",status:"PAUSED",components:[]}]})}});
+    await expect(client.listMessageTemplates("waba")).resolves.toMatchObject([{name:"hello_world",status:"APPROVED"},{name:"order_update",status:"PAUSED"}]);expect(calls).toHaveLength(2);
+  });
 });

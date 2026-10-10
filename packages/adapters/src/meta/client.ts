@@ -12,6 +12,8 @@ export interface MetaClientOptions {
   fetch?: typeof fetch;
 }
 
+export type MetaMessageTemplate = { id:string;name:string;language:string;category:string;status:string;components:Array<Record<string,unknown>>;qualityScore?:Record<string,unknown> };
+
 export class MetaCloudApiClient {
   private readonly fetchImpl: typeof fetch;
 
@@ -35,6 +37,13 @@ export class MetaCloudApiClient {
     };
     if (!response.ok || !payload.id) throw new Error(payload.error?.message ?? "Meta phone number verification failed");
     return { id: payload.id, displayPhoneNumber: payload.display_phone_number, verifiedName: payload.verified_name, qualityRating: payload.quality_rating };
+  }
+
+  async listMessageTemplates(whatsappBusinessAccountId:string):Promise<MetaMessageTemplate[]>{
+    const fields="id,name,language,category,status,components,quality_score";let url=`https://graph.facebook.com/${this.options.graphVersion}/${encodeURIComponent(whatsappBusinessAccountId)}/message_templates?${new URLSearchParams({fields,limit:"100"})}`;const templates:MetaMessageTemplate[]=[];
+    for(let page=0;url&&page<20;page+=1){const parsed=new URL(url);if(parsed.protocol!=="https:"||parsed.hostname!=="graph.facebook.com")throw new Error("Meta returned an invalid template pagination URL");const response=await this.fetchImpl(url,{headers:{Authorization:`Bearer ${this.options.accessToken}`}});const payload=await response.json().catch(()=>({})) as {data?:Array<{id?:string;name?:string;language?:string;category?:string;status?:string;components?:Array<Record<string,unknown>>;quality_score?:Record<string,unknown>}>;paging?:{next?:string};error?:{message?:string}};if(!response.ok||!Array.isArray(payload.data))throw new Error(payload.error?.message??"Meta template synchronization failed");for(const item of payload.data){if(item.id&&item.name&&item.language&&item.category&&item.status)templates.push({id:item.id,name:item.name,language:item.language,category:item.category,status:item.status,components:item.components??[],qualityScore:item.quality_score})}url=payload.paging?.next??""}
+    if(url)throw new Error("Meta template pagination exceeded the safety limit");
+    return templates;
   }
 
   async send(to: string, content: MessageContent, signal?: AbortSignal): Promise<MetaSendResult> {
