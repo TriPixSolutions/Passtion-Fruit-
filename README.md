@@ -1,10 +1,10 @@
 # Passion Fruit — Project Development Kit
 
-**Version:** 1.2 · **Updated:** 8 October 2026 · **Stage:** connected Supabase and Meta test pilot; live sending locked off.
+**Version:** 1.3 · **Updated:** 10 October 2026 · **Stage:** deployed controlled pilot with Supabase and Meta official APIs.
 
 Passion Fruit is a multi-tenant WhatsApp automation SaaS using Meta's official business messaging APIs. This kit defines the product, technical boundaries, core reliability rules, development sequence, and migration path from a two-customer Hostinger pilot to AWS.
 
-This repository now contains the development blueprint, the owner-approved responsive UI prototype, Supabase migrations, RLS policies, Auth lifecycle, a typed SDK, authenticated API routes, encrypted Meta channel storage, signed webhook ingestion, the durable outbox/queue worker and the first scheduling/automation data model. The owner Supabase project and Meta test asset are connected, and the verified source is published to the `TriPixSolutions/Passtion-Fruit-` GitHub repository. Filled credentials stay in ignored local or hosted secret stores and are never committed. Hostinger deployment remains pending.
+This repository contains the development blueprint, responsive product UI, Supabase migrations and RLS, Auth lifecycle, typed contracts, authenticated APIs, encrypted Meta channel credentials, signed webhook ingestion, a durable outbox/queue worker, shared inbox, contacts, schedules, workflows, governed campaigns, grounded agent evaluation, commerce/CRM foundations, analytics and operations monitoring. The owner Supabase project and Meta test asset are connected, and the verified source is deployed from the `TriPixSolutions/Passtion-Fruit-` GitHub repository to Hostinger. Filled credentials stay in ignored local or hosted secret stores and are never committed.
 
 ## Owner overview — മലയാളം
 
@@ -39,7 +39,7 @@ Hostinger Cloud Startup-ൽ website / app deploy ചെയ്യാം എന്
 
 ## Current implementation milestone
 
-M1 and the connected portion of M2 are implemented: tenancy, membership activation, feature grants, credential encryption, provider verification, signed webhook receipt, inbox persistence, outbound intent creation, queue relay and a bounded worker. All migrations are applied to the owner Supabase project. Owner activation and the hosted two-tenant denial suite passed. The Meta test asset is connected and a signed webhook completed the hosted receipt-to-queue-to-worker path. The next gates are deploying to Hostinger, onboarding a permitted recipient and completing one owner-approved receive/send/status round trip before enabling live sends.
+M1–M2 and the controlled-pilot portions of M3–M5 are implemented. Hostinger deployment, tenant isolation, official receive/send/status round trips, permanent encrypted Meta credentials, hosted worker execution, template synchronization, campaign approvals/limits, workflow execution, private inbound media, analytics and production operations visibility are live. Paid model-provider auto-replies, external Shopify/WooCommerce or CRM authorization, billing, backup/restore evidence and advanced voice generation remain explicit later gates; these require the relevant provider accounts, policies and pilot data before activation.
 
 ## Documentation conventions
 

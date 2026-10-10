@@ -2,7 +2,7 @@
 
 ## Verification philosophy
 
-No architecture or developer can promise zero bugs. Release confidence comes from tested invariants, observable failure states, limited rollout and recovery practice. The tests below are **required future tests**; none has run against a Passion Fruit application, because implementation has not started.
+No architecture or developer can promise zero bugs. Release confidence comes from tested invariants, observable failure states, limited rollout and recovery practice. The matrix below remains the release checklist. Unit/type/build checks, hosted tenant-isolation checks, signed webhook durability, official send/status receipt, scheduled worker execution and production health checks have passed for the implemented pilot paths; backup recovery, provider connector and paid-AI gates remain pending.
 
 ## Core test matrix
 
