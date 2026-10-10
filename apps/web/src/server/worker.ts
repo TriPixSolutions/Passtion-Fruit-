@@ -258,6 +258,8 @@ async function processCampaign(admin: SupabaseClient, job: ClaimedJob): Promise<
 export async function runWorkerBatch(): Promise<{ claimed: number; completed: number; failed: number }> {
   const admin = createAdminClient();
   const env = workerEnvironment();
+  const { error: slaError } = await admin.rpc("evaluate_sla_breaches");
+  if (slaError) throw slaError;
   const claimLimit = env.liveSendsEnabled
     ? Math.max(1, Math.min(env.batchSize, Math.floor(env.timeBudgetSeconds * env.phoneSendsPerSecond * 0.75)))
     : env.batchSize;

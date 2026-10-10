@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const operationMetrics = ["dead_jobs", "retry_jobs", "failed_webhooks", "stale_outbox", "unknown_messages"] as const;
+export const operationMetrics = ["dead_jobs", "retry_jobs", "failed_webhooks", "stale_outbox", "unknown_messages", "sla_breaches"] as const;
 export type OperationMetric = typeof operationMetrics[number];
 export type OperationsSnapshot = {capturedAt:string;worker:{status:string;startedAt:string;finishedAt:string|null;claimed:number;completed:number;failed:number;durationMs:number|null}|null;jobs:{queued:number;processing:number;retry:number;dead:number;completed24h:number;oldestReadySeconds:number|null};webhooks:{pending:number;processed24h:number;failed:number;quarantined:number};outbox:{unpublished:number;stale:number};messages:{unknown:number;failed:number};byKind:Record<string,{queued:number;processing:number;retry:number;dead:number}>};
 const count=(rows:Array<Record<string,unknown>>,key:string,value:string)=>rows.filter((row)=>row[key]===value).length;
@@ -28,6 +28,7 @@ export async function operationMetricValue(admin:SupabaseClient,tenantId:string,
   else if(metric==="retry_jobs")query=admin.from("jobs").select("id",{count:"exact",head:true}).eq("tenant_id",tenantId).eq("status","retry").gte("updated_at",since);
   else if(metric==="failed_webhooks")query=admin.from("webhook_receipts").select("id",{count:"exact",head:true}).eq("tenant_id",tenantId).in("state",["failed","quarantined"]).gte("received_at",since);
   else if(metric==="stale_outbox")query=admin.from("outbox").select("id",{count:"exact",head:true}).eq("tenant_id",tenantId).is("published_at",null).gte("created_at",since).lt("created_at",new Date(Date.now()-5*60_000).toISOString());
-  else query=admin.from("messages").select("id",{count:"exact",head:true}).eq("tenant_id",tenantId).eq("status","unknown").gte("updated_at",since);
+  else if(metric==="unknown_messages")query=admin.from("messages").select("id",{count:"exact",head:true}).eq("tenant_id",tenantId).eq("status","unknown").gte("updated_at",since);
+  else query=admin.from("conversation_sla_events").select("id",{count:"exact",head:true}).eq("tenant_id",tenantId).is("resolved_at",null).gte("breached_at",since);
   const{count,error}=await query;if(error)throw error;return count??0;
 }
